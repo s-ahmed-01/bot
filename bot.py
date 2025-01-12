@@ -157,8 +157,7 @@ async def create_polls(ctx):
                 f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
             ]
 
-        # Create embed
-        embed = discord.Embed(title=f"Match Poll: {team1} vs {team2} ({match_type})",
+                embed = discord.Embed(title=f"Match Poll: {team1} vs {team2} ({match_type})",
                               description="React with your prediction!",
                               color=discord.Color.blue())
         for i, option in enumerate(options, start=1):
@@ -166,8 +165,9 @@ async def create_polls(ctx):
 
         # Send embed and add reactions
         poll_message = await ctx.send(embed=embed)
+        numeric_emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']  # Numeric emojis for options
         for i in range(len(options)):
-            await poll_message.add_reaction(chr(127462 + i))  # Regional indicator emojis for options
+            await poll_message.add_reaction(numeric_emojis[i])
 
         # Mark poll as created
         cursor.execute('''
