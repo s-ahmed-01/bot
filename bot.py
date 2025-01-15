@@ -157,9 +157,7 @@ async def create_polls(ctx):
                 f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
             ]
 
-        embed = discord.Embed(title=f"Match Poll: {team1} vs {team2} ({match_type})",
-                            description="React with your prediction!",
-                            color=discord.Color.blue())
+        embed = discord.Embed(title=f"Match Poll: {team1} vs {team2} ({match_type})", description="React with your prediction!", color=discord.Color.blue())
         for i, option in enumerate(options, start=1):
             embed.add_field(name=f"Option {i}", value=option, inline=False)
 
