@@ -51,6 +51,31 @@ CREATE TABLE IF NOT EXISTS predictions (
 # Commit changes to the database
 conn.commit()
 
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS bonus_answers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    answer TEXT NOT NULL,
+    UNIQUE(question_id, user_id),  -- Ensure one answer per user per question
+    FOREIGN KEY (question_id) REFERENCES bonus_questions (id)
+)
+''')
+conn.commit()
+
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS bonus_questions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question_text TEXT NOT NULL,
+    question_type TEXT NOT NULL CHECK (question_type IN ('MCQ', 'NUMERICAL')),
+    options TEXT, -- JSON string for MCQ options, NULL for numerical questions
+    correct_answer TEXT NOT NULL, -- For MCQ, store the correct option; for numerical, store the range (e.g., "14-16").
+    date_posted DATE DEFAULT CURRENT_DATE,
+    points INTEGER DEFAULT 1
+);
+
+''')
+conn.commit()
 
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS leaderboard (
@@ -203,7 +228,11 @@ async def on_reaction_add(reaction, user):
         match_id = match_data[0]
 
         # Determine the predicted winner and score based on the reaction and match type
-        option_index = ord(str(reaction.emoji)) - 127462  # Regional indicator emojis start at 127462
+        if str(reaction.emoji) in numeric_emojis:
+            option_index = numeric_emojis.index(str(reaction.emoji))
+        else:
+            await message.channel.send("Invalid reaction.")
+            return
         pred_winner = None
         pred_score = None
 
