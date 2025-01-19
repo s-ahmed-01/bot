@@ -228,6 +228,7 @@ async def on_reaction_add(reaction, user):
         match_id = match_data[0]
 
         # Determine the predicted winner and score based on the reaction and match type
+        numeric_emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']  # Your emoji list
         if str(reaction.emoji) in numeric_emojis:
             option_index = numeric_emojis.index(str(reaction.emoji))
         else:
