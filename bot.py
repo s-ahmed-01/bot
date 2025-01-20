@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS matches (
     match_type TEXT NOT NULL,
     match_date TEXT NOT NULL,  -- Date of the match
     poll_created BOOLEAN DEFAULT FALSE, -- Track poll creation
+    poll_message_id TEXT,
     winner TEXT,
     score TEXT
 )
