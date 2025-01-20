@@ -425,7 +425,7 @@ async def confirm_predictions(ctx):
 
         # Fetch all matches for those dates, with left join to include missing predictions
         cursor.execute('''
-            SELECT matches.match_date, matches.team1, matches.team2, matches.match_type, predictions.prediction
+            SELECT matches.match_date, matches.team1, matches.team2, matches.match_type, predictions.pred_winner, predictions.pred_score
             FROM matches
             LEFT JOIN predictions ON matches.id = predictions.match_id AND predictions.user_id = ?
             WHERE matches.match_date IN ({})
@@ -444,29 +444,9 @@ async def confirm_predictions(ctx):
             color=discord.Color.green()
         )
 
-        for match_date, team1, team2, match_type, prediction in matches:
-            # Convert the prediction index to the appropriate readable format
-            if match_type == 'BO1':
-                options = [f"{team1} wins", f"{team2} wins"]
-            elif match_type == 'BO3':
-                options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
-            elif match_type == 'BO5':
-                options = [
-                    f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
-                    f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
-                ]
-            else:
-                options = ["Unknown match type"]
-
-            # Determine prediction text
-            if prediction is None:
-                prediction_text = "No prediction made."
-            else:
-                prediction_text = options[prediction - 1] if 0 < prediction <= len(options) else "Invalid prediction"
-
             embed.add_field(
                 name=f"{team1} vs {team2} ({match_type}) - {match_date}",
-                value=f"Your Prediction: {prediction_text}",
+                value=f"Your Prediction: {pred_winner} {pred_score}",
                 inline=False
             )
 
