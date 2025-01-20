@@ -526,6 +526,7 @@ async def schedule_poll_deletion(ctx, match_date: str):
     except Exception as e:
         await ctx.send(f"Error scheduling poll deletion: {e}")
 
+@bot.command()
 async def delete_polls(match_date: str):
     """
     Deletes all polls for the specified match_date.
