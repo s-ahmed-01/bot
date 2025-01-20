@@ -64,7 +64,8 @@ CREATE TABLE IF NOT EXISTS predictions (
     pred_score TEXT,
     match_id INTEGER,
     points INTEGER DEFAULT 0,
-    FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
+    FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
+    UNIQUE(user_id, match_id)
 )
 ''')
 
