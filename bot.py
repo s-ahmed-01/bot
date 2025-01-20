@@ -292,7 +292,7 @@ async def on_reaction_add(reaction, user):
 async def result_polls(ctx):
     # Fetch matches for the upcoming week
     today = datetime.today().date()
-    one_week_later = today + datetime.timedelta(days=7)
+    one_week_later = today + timedelta(days=7)
 
     cursor.execute('''
     SELECT id, team1, team2, match_type
