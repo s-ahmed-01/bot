@@ -438,11 +438,12 @@ async def confirm_predictions(ctx):
             return
 
         # Prepare a confirmation message
-        embed = discord.Embed(
-            title="Your Predictions for the Upcoming Scheduled Matches",
-            description="Here are the predictions you have made (or need to make) for the next scheduled days.",
-            color=discord.Color.green()
-        )
+        for match_date, team1, team2, match_type, pred_winner, pred_score in matches:
+            embed = discord.Embed(
+                title="Your Predictions for the Upcoming Scheduled Matches",
+                description="Here are the predictions you have made (or need to make) for the next scheduled days.",
+                color=discord.Color.green()
+            )
 
         embed.add_field(
             name=f"{team1} vs {team2} ({match_type}) - {match_date}",
