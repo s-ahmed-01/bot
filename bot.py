@@ -369,7 +369,7 @@ async def result_polls(ctx):
 
         # Store poll data
         active_polls[poll_message.id] = {
-            "poll_type": "result"
+            "poll_type": "result",
             "match_id": match_id,
             "team1": team1,
             "team2": team2,
