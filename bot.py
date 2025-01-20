@@ -23,9 +23,14 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 scheduler = AsyncIOScheduler()
 uk_tz = pytz.timezone("Europe/London")
 
+# Start the event loop and scheduler
+async def main():
+    scheduler.start()  # Start the scheduler
+    print("Scheduler started")
+
 loop = asyncio.new_event_loop()
 asyncio.set_event_loop(loop)
-loop.create_task(scheduler.start())
+loop.run_until_complete(main())
 
 # Database setup
 conn = sqlite3.connect('predictions.db')
