@@ -23,6 +23,9 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 scheduler = AsyncIOScheduler()
 uk_tz = pytz.timezone("Europe/London")
 
+# To store active polls
+active_polls = {}
+
 # Start the event loop and scheduler
 async def main():
     scheduler.start()  # Start the scheduler
@@ -219,120 +222,28 @@ async def create_polls(ctx):
 @bot.event
 async def on_reaction_add(reaction, user):
     if user.bot:
-        return
+        return  # Ignore bot reactions
 
     message = reaction.message
-    if not message.embeds:
+    if message.id not in active_polls:
+        return  # Ignore reactions not related to active polls
+
+    poll_data = active_polls.pop(message.id)  # Retrieve and remove poll data
+    match_id = poll_data["match_id"]
+    match_type = poll_data["match_type"]
+    options = poll_data["options"]
+    reactions = poll_data["reactions"]
+
+    # Determine which result was selected
+    if str(reaction.emoji) not in reactions:
+        await message.channel.send("Invalid reaction. Poll closed without recording a result.")
         return
 
-    embed = message.embeds[0]
-    if "Match Poll:" in embed.title:
-        # Parse team names and match type from the title
-        match_info = embed.title.replace("Match Poll: ", "").split(" ")
-        match_type = match_info[-1].strip("()").upper()  # Extract match type from the last element
-        team1, vs, team2 = match_info[:-1]  # Extract team1, "vs", and team2
-        team1 = team1.strip()
-        team2 = team2.strip()
+    selected_index = reactions.index(str(reaction.emoji))
+    result = options[selected_index]
+    winner, score = result.split(" ", 1)  # Extract winner and score
 
-        # Retrieve match_id for the given teams
-        cursor.execute('SELECT id FROM matches WHERE team1 = ? AND team2 = ?', (team1, team2))
-        match_data = cursor.fetchone()
-        if not match_data:
-            await message.channel.send("Error: Match data not found in the database.")
-            return
-
-        match_id = match_data[0]
-
-        # Determine the predicted winner and score based on the reaction and match type
-        numeric_emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']  # Your emoji list
-        if str(reaction.emoji) in numeric_emojis:
-            option_index = numeric_emojis.index(str(reaction.emoji))
-        else:
-            await message.channel.send("Invalid reaction.")
-            return
-        pred_winner = None
-        pred_score = None
-
-        if match_type == 'BO1':
-            if option_index == 0:  # Team 1 wins
-                pred_winner = team1
-                pred_score = "1-0"
-            elif option_index == 1:  # Team 2 wins
-                pred_winner = team2
-                pred_score = "1-0"
-
-        elif match_type == 'BO3':
-            if option_index == 0:
-                pred_winner = team1
-                pred_score = "2-0"
-            elif option_index == 1:
-                pred_winner = team1
-                pred_score = "2-1"
-            elif option_index == 2:
-                pred_winner = team2
-                pred_score = "2-1"
-            elif option_index == 3:
-                pred_winner = team2
-                pred_score = "2-0"
-
-        elif match_type == 'BO5':
-            if option_index == 0:
-                pred_winner = team1
-                pred_score = "3-0"
-            elif option_index == 1:
-                pred_winner = team1
-                pred_score = "3-1"
-            elif option_index == 2:
-                pred_winner = team1
-                pred_score = "3-2"
-            elif option_index == 3:
-                pred_winner = team2
-                pred_score = "3-2"
-            elif option_index == 4:
-                pred_winner = team2
-                pred_score = "3-1"
-            elif option_index == 5:
-                pred_winner = team2
-                pred_score = "3-0"
-
-        # Validate the prediction
-        if not pred_winner or not pred_score:
-            await message.channel.send(f"{user.name}, your prediction is invalid for this match.")
-            return
-
-        # Check if a prediction already exists for the user and match
-        cursor.execute('SELECT id FROM predictions WHERE user_id = ? AND match_id = ?', (user.id, match_id))
-        existing_prediction = cursor.fetchone()
-
-        if existing_prediction:
-            # Update existing prediction
-            cursor.execute('''
-            UPDATE predictions
-            SET pred_winner = ?, pred_score = ?
-            WHERE user_id = ? AND match_id = ?
-            ''', (pred_winner, pred_score, user.id, match_id))
-            conn.commit()
-            await reaction.message.channel.send(f"{user.name}, your prediction has been updated to {pred_winner} with score {pred_score}.")
-        else:
-            # Insert new prediction
-            cursor.execute('''
-            INSERT INTO predictions (user_id, match_id, pred_winner, pred_score)
-            VALUES (?, ?, ?, ?)
-            ''', (user.id, match_id, pred_winner, pred_score))
-            conn.commit()
-            await reaction.message.channel.send(f"{user.name} voted for {pred_winner} with score {pred_score}.")
-
-
-@bot.command()
-async def add_result(ctx, match_id: int, winner: str, score: str):
-    # Validate match ID
-    cursor.execute('SELECT * FROM matches WHERE id = ?', (match_id,))
-    match = cursor.fetchone()
-    if not match:
-        await ctx.send("Invalid match ID!")
-        return
-
-    # Update match result
+    # Update the match result in the database
     cursor.execute('''
     UPDATE matches
     SET winner = ?, score = ?
@@ -354,11 +265,11 @@ async def add_result(ctx, match_id: int, winner: str, score: str):
 
         # Award points for correct winner
         if pred_winner == winner:
-            points += 1 if match[3] == 'BO1' else (2 if match[3] == 'BO3' else 3)
+            points += 1 if match_type == "BO1" else (2 if match_type == "BO3" else 3)
 
             # Bonus points for correct score
             if pred_score == score:
-                points += 1 if match[3] == 'BO3' else (2 if match[3] == 'BO5' else 0)
+                points += 1 if match_type == "BO3" else (2 if match_type == "BO5" else 0)
 
         # Update points in the predictions table
         cursor.execute('''
@@ -368,9 +279,75 @@ async def add_result(ctx, match_id: int, winner: str, score: str):
         ''', (points, pred_id))
     conn.commit()
 
-    conn.commit()
+    # Delete the poll message
+    await message.delete()
 
-    await ctx.send(f"Result recorded for match {match_id}: {winner} wins {score}!")
+    # Notify the result
+    await message.channel.send(
+        f"Result recorded for match {poll_data['team1']} vs {poll_data['team2']} ({match_type}): {winner} wins with score {score}!"
+    )
+
+
+@bot.command()
+async def result_polls(ctx):
+    # Fetch matches for the upcoming week
+    today = datetime.date.today()
+    one_week_later = today + datetime.timedelta(days=7)
+
+    cursor.execute('''
+    SELECT id, team1, team2, match_type
+    FROM matches
+    WHERE match_date BETWEEN ? AND ?
+    ORDER BY match_date, id
+    ''', (today, one_week_later))
+    matches = cursor.fetchall()
+
+    if not matches:
+        await ctx.send("No matches found for the upcoming week.")
+        return
+
+    for match in matches:
+        match_id, team1, team2, match_type = match
+
+        # Generate score options based on match type
+        if match_type == 'BO1':
+            options = [f"{team1} wins", f"{team2} wins"]
+            reactions = ['1️⃣', '2️⃣']
+        elif match_type == 'BO3':
+            options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
+            reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣']
+        elif match_type == 'BO5':
+            options = [
+                f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
+                f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
+            ]
+            reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']
+
+        # Create embed for the poll
+        embed = discord.Embed(
+            title=f"Result Poll: {team1} vs {team2} ({match_type})",
+            description="React with the correct result to record it!",
+            color=discord.Color.green()
+        )
+        for i, option in enumerate(options, start=1):
+            embed.add_field(name=f"Option {i}", value=option, inline=False)
+
+        # Send the poll message
+        poll_message = await ctx.send(embed=embed)
+
+        # Add reactions
+        for reaction in reactions:
+            await poll_message.add_reaction(reaction)
+
+        # Store poll data
+        active_polls[poll_message.id] = {
+            "match_id": match_id,
+            "team1": team1,
+            "team2": team2,
+            "match_type": match_type,
+            "options": options,
+            "reactions": reactions
+        }
 
 @bot.command()
 async def show_matches(ctx):
