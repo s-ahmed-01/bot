@@ -1,9 +1,11 @@
-from datetime import datetime
 import discord
 from discord.ext import commands
 import sqlite3  # Replace with pymongo if you prefer MongoDB
 import os
 from dotenv import load_dotenv
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from datetime import datetime, timedelta
+import pytz
 
 # Load environment variables
 load_dotenv()
@@ -15,6 +17,13 @@ intents.messages = True
 intents.message_content = True
 intents.reactions = True
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# Create a scheduler
+scheduler = AsyncIOScheduler()
+scheduler.start()
+
+# Timezone for UK
+uk_tz = pytz.timezone("Europe/London")
 
 # Database setup
 conn = sqlite3.connect('predictions.db')
@@ -389,6 +398,78 @@ async def show_matches(ctx):
     await ctx.send(matches_message)
 
 @bot.command()
+async def confirm_predictions(ctx):
+    try:
+        user_id = ctx.author.id
+
+        # Get the next three unique match dates
+        cursor.execute('''
+            SELECT DISTINCT match_date
+            FROM matches
+            WHERE match_date >= CURRENT_DATE
+            ORDER BY match_date
+            LIMIT 3
+        ''')
+        upcoming_dates = [row[0] for row in cursor.fetchall()]
+
+        if not upcoming_dates:
+            await ctx.send("There are no upcoming matches in the schedule.")
+            return
+
+        # Fetch all matches for those dates, with left join to include missing predictions
+        cursor.execute('''
+            SELECT matches.match_date, matches.team1, matches.team2, matches.match_type, predictions.prediction
+            FROM matches
+            LEFT JOIN predictions ON matches.id = predictions.match_id AND predictions.user_id = ?
+            WHERE matches.match_date IN ({})
+            ORDER BY matches.match_date, matches.id
+        '''.format(','.join(['?'] * len(upcoming_dates))), (user_id, *upcoming_dates))
+        matches = cursor.fetchall()
+
+        if not matches:
+            await ctx.send("There are no matches to display.")
+            return
+
+        # Prepare a confirmation message
+        embed = discord.Embed(
+            title="Your Predictions for the Upcoming Scheduled Matches",
+            description="Here are the predictions you have made (or need to make) for the next scheduled days.",
+            color=discord.Color.green()
+        )
+
+        for match_date, team1, team2, match_type, prediction in matches:
+            # Convert the prediction index to the appropriate readable format
+            if match_type == 'BO1':
+                options = [f"{team1} wins", f"{team2} wins"]
+            elif match_type == 'BO3':
+                options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
+            elif match_type == 'BO5':
+                options = [
+                    f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
+                    f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
+                ]
+            else:
+                options = ["Unknown match type"]
+
+            # Determine prediction text
+            if prediction is None:
+                prediction_text = "No prediction made."
+            else:
+                prediction_text = options[prediction - 1] if 0 < prediction <= len(options) else "Invalid prediction"
+
+            embed.add_field(
+                name=f"{team1} vs {team2} ({match_type}) - {match_date}",
+                value=f"Your Prediction: {prediction_text}",
+                inline=False
+            )
+
+        await ctx.send(embed=embed)
+
+    except Exception as e:
+        await ctx.send(f"An error occurred while fetching your predictions: {e}")
+
+
+@bot.command()
 async def reset_leaderboard(ctx):
     """
     Reset the leaderboard and clear all points.
@@ -460,6 +541,67 @@ async def delete_matches_by_date(ctx, match_date: str):
     except ValueError:
         await ctx.send("Invalid date format! Please use DD-MM-YYYY.")
 
+@bot.command()
+async def schedule_poll_deletion(ctx, match_date: str):
+    """
+    Schedules the deletion of polls for the given match_date at 4 PM UK time.
+    match_date format: YYYY-MM-DD
+    """
+    try:
+        # Convert match_date to datetime
+        match_date_dt = datetime.strptime(match_date, "%Y-%m-%d")
+        deletion_time_utc = uk_tz.localize(
+            datetime.combine(match_date_dt, datetime.min.time()) + timedelta(hours=16)
+        ).astimezone(pytz.utc)  # Convert to UTC for the scheduler
+
+        # Schedule task
+        scheduler.add_job(delete_polls, "date", run_date=deletion_time_utc, args=[match_date])
+        await ctx.send(f"Poll deletion for {match_date} scheduled at 4 PM UK time.")
+
+    except Exception as e:
+        await ctx.send(f"Error scheduling poll deletion: {e}")
+
+async def delete_polls(match_date: str):
+    """
+    Deletes all polls for the specified match_date.
+    """
+    try:
+        # Fetch all polls for the match_date
+        cursor.execute('''
+            SELECT id, poll_message_id FROM matches
+            WHERE match_date = ? AND poll_created = TRUE
+        ''', (match_date,))
+        polls = cursor.fetchall()
+
+        if not polls:
+            print(f"No polls found for {match_date}.")
+            return
+
+        # Delete polls and update the database
+        for match_id, poll_message_id in polls:
+            # Fetch the channel and message to delete
+            channel = bot.get_channel(your_channel_id)  # Replace with your channel ID
+            if channel is None:
+                print("Channel not found.")
+                continue
+
+            try:
+                poll_message = await channel.fetch_message(poll_message_id)
+                await poll_message.delete()
+                print(f"Deleted poll message {poll_message_id}.")
+            except Exception as e:
+                print(f"Failed to delete poll {poll_message_id}: {e}")
+
+            # Mark poll as deleted in the database
+            cursor.execute('''
+                UPDATE matches
+                SET poll_created = FALSE
+                WHERE id = ?
+            ''', (match_id,))
+            conn.commit()
+
+    except Exception as e:
+        print(f"Error deleting polls for {match_date}: {e}")
 
 
 
