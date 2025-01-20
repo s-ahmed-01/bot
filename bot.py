@@ -291,7 +291,7 @@ async def on_reaction_add(reaction, user):
 @bot.command()
 async def result_polls(ctx):
     # Fetch matches for the upcoming week
-    today = datetime.date.today()
+    today = datetime.date().today()
     one_week_later = today + datetime.timedelta(days=7)
 
     cursor.execute('''
