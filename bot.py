@@ -1,3 +1,4 @@
+import asyncio
 import discord
 from discord.ext import commands
 import sqlite3  # Replace with pymongo if you prefer MongoDB
