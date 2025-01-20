@@ -211,6 +211,15 @@ async def create_polls(ctx):
         numeric_emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']  # Numeric emojis for options
         for i in range(len(options)):
             await poll_message.add_reaction(numeric_emojis[i])
+        
+        active_polls[poll_message.id] = {
+            "poll_type": "match",
+            "match_id": match_id,
+            "match_type": match_type,
+            "options": options,
+            "reactions": numeric_emojis
+        }
+
 
         # Mark poll as created
         cursor.execute('''
@@ -229,64 +238,82 @@ async def on_reaction_add(reaction, user):
     if message.id not in active_polls:
         return  # Ignore reactions not related to active polls
 
-    poll_data = active_polls.pop(message.id)  # Retrieve and remove poll data
-    match_id = poll_data["match_id"]
-    match_type = poll_data["match_type"]
-    options = poll_data["options"]
-    reactions = poll_data["reactions"]
+    poll_data = active_polls[message.id]
+    poll_type = poll_data["poll_type"]
 
-    # Determine which result was selected
-    if str(reaction.emoji) not in reactions:
-        await message.channel.send("Invalid reaction. Poll closed without recording a result.")
+    if str(reaction.emoji) not in poll_data["reactions"]:
+        await message.channel.send("Invalid reaction.")
         return
 
-    selected_index = reactions.index(str(reaction.emoji))
-    result = options[selected_index]
-    winner, score = result.split(" ", 1)  # Extract winner and score
+    selected_index = poll_data["reactions"].index(str(reaction.emoji))
+    selected_option = poll_data["options"][selected_index]
 
-    # Update the match result in the database
-    cursor.execute('''
-    UPDATE matches
-    SET winner = ?, score = ?
-    WHERE id = ?
-    ''', (winner, score, match_id))
-    conn.commit()
+    if poll_type == "match":  # Handle match (prediction) polls
+        match_id = poll_data["match_id"]
+        match_type = poll_data["match_type"]
+        user_prediction = selected_option.split(" ", 1)
+        pred_winner = user_prediction[0]
+        pred_score = user_prediction[1] if len(user_prediction) > 1 else None
 
-    # Calculate and update points for predictions
-    cursor.execute('''
-    SELECT id, user_id, pred_winner, pred_score
-    FROM predictions
-    WHERE match_id = ?
-    ''', (match_id,))
-    predictions = cursor.fetchall()
-
-    for prediction in predictions:
-        pred_id, user_id, pred_winner, pred_score = prediction
-        points = 0
-
-        # Award points for correct winner
-        if pred_winner == winner:
-            points += 1 if match_type == "BO1" else (2 if match_type == "BO3" else 3)
-
-            # Bonus points for correct score
-            if pred_score == score:
-                points += 1 if match_type == "BO3" else (2 if match_type == "BO5" else 0)
-
-        # Update points in the predictions table
+        # Log the user's prediction in the database
         cursor.execute('''
-        UPDATE predictions
-        SET points = ?
+        INSERT INTO predictions (user_id, match_id, pred_winner, pred_score, points)
+        VALUES (?, ?, ?, ?, 0)
+        ON CONFLICT(user_id, match_id) DO UPDATE SET pred_winner = excluded.pred_winner, pred_score = excluded.pred_score
+        ''', (user.id, match_id, pred_winner, pred_score))
+        conn.commit()
+
+        await message.channel.send(f"Prediction logged for {user.name}: {selected_option} ({match_type})")
+
+    elif poll_type == "result":  # Handle result polls
+        match_id = poll_data["match_id"]
+        match_type = poll_data["match_type"]
+        winner, score = selected_option.split(" ", 1)
+
+        # Update the match result in the database
+        cursor.execute('''
+        UPDATE matches
+        SET winner = ?, score = ?
         WHERE id = ?
-        ''', (points, pred_id))
-    conn.commit()
+        ''', (winner, score, match_id))
+        conn.commit()
 
-    # Delete the poll message
-    await message.delete()
+        # Award points for predictions
+        cursor.execute('''
+        SELECT id, user_id, pred_winner, pred_score
+        FROM predictions
+        WHERE match_id = ?
+        ''', (match_id,))
+        predictions = cursor.fetchall()
 
-    # Notify the result
-    await message.channel.send(
-        f"Result recorded for match {poll_data['team1']} vs {poll_data['team2']} ({match_type}): {winner} wins with score {score}!"
-    )
+        for prediction in predictions:
+            pred_id, user_id, pred_winner, pred_score = prediction
+            points = 0
+
+            if pred_winner == winner:
+                points += 1 if match_type == "BO1" else (2 if match_type == "BO3" else 3)
+
+                if pred_score == score:
+                    points += 1 if match_type == "BO3" else (2 if match_type == "BO5" else 0)
+
+            # Update points in the predictions table
+            cursor.execute('''
+            UPDATE predictions
+            SET points = ?
+            WHERE id = ?
+            ''', (points, pred_id))
+        conn.commit()
+
+        await message.channel.send(
+            f"Result recorded for match {poll_data['team1']} vs {poll_data['team2']} ({match_type}): {winner} wins with score {score}!"
+        )
+
+    # Remove poll from active polls
+    active_polls.pop(message.id)
+
+    # Optionally delete result poll message
+    if poll_type == "result":
+        await message.delete()
 
 
 @bot.command()
@@ -342,6 +369,7 @@ async def result_polls(ctx):
 
         # Store poll data
         active_polls[poll_message.id] = {
+            "poll_type": "result"
             "match_id": match_id,
             "team1": team1,
             "team2": team2,
@@ -526,52 +554,6 @@ async def schedule_poll_deletion(ctx, match_date: str):
 
     except Exception as e:
         await ctx.send(f"Error scheduling poll deletion: {e}")
-
-@bot.command()
-async def delete_polls(match_date: str):
-    """
-    Deletes all polls for the specified match_date.
-    """
-    try:
-        # Fetch all polls for the match_date
-        cursor.execute('''
-            SELECT id, poll_message_id FROM matches
-            WHERE match_date = ? AND poll_created = TRUE
-        ''', (match_date,))
-        polls = cursor.fetchall()
-
-        if not polls:
-            print(f"No polls found for {match_date}.")
-            return
-
-        # Delete polls and update the database
-        for match_id, poll_message_id in polls:
-            # Fetch the channel and message to delete
-            channel = bot.get_channel(your_channel_id)  # Replace with your channel ID
-            if channel is None:
-                print("Channel not found.")
-                continue
-
-            try:
-                poll_message = await channel.fetch_message(poll_message_id)
-                await poll_message.delete()
-                print(f"Deleted poll message {poll_message_id}.")
-            except Exception as e:
-                print(f"Failed to delete poll {poll_message_id}: {e}")
-
-            # Mark poll as deleted in the database
-            cursor.execute('''
-                UPDATE matches
-                SET poll_created = FALSE
-                WHERE id = ?
-            ''', (match_id,))
-            conn.commit()
-
-    except Exception as e:
-        print(f"Error deleting polls for {match_date}: {e}")
-
-
-
 
 # Run bot
 bot.run(TOKEN)
