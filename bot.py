@@ -444,11 +444,11 @@ async def confirm_predictions(ctx):
             color=discord.Color.green()
         )
 
-            embed.add_field(
-                name=f"{team1} vs {team2} ({match_type}) - {match_date}",
-                value=f"Your Prediction: {pred_winner} {pred_score}",
-                inline=False
-            )
+        embed.add_field(
+            name=f"{team1} vs {team2} ({match_type}) - {match_date}",
+            value=f"Your Prediction: {pred_winner} {pred_score}",
+            inline=False
+        )
 
         await ctx.send(embed=embed)
 
