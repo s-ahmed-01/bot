@@ -214,7 +214,7 @@ async def create_polls(ctx):
             await poll_message.add_reaction(numeric_emojis[i])
         
         active_polls[poll_message.id] = {
-            "poll_type": "match",
+            "poll_type": "match_poll",
             "match_id": match_id,
             "match_type": match_type,
             "options": options,
