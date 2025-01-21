@@ -236,16 +236,58 @@ async def on_reaction_add(reaction, user):
         return  # Ignore bot reactions
 
     message = reaction.message
-    if message.id not in active_polls:
-        return  # Ignore reactions not related to active polls
 
-    poll_data = active_polls[message.id]
-    poll_type = poll_data["poll_type"]
+    # Ensure the message has an embed
+    if not message.embeds:
+        return
 
-    if poll_type == "match_poll":  # Handle match polls
-        match_id = poll_data["match_id"]
-        options = poll_data["options"]
-        reactions = poll_data["reactions"]
+    embed = message.embeds[0]  # Get the first embed
+    title = embed.title  # Embed title (e.g., "Match Poll: TSM vs FTX (BO5)")
+    description = message.content.strip()  # Message content for match date
+
+    # Parse poll type and match details from the title
+    if "Match Poll" in title:
+        poll_type = "match_poll"
+    elif "Result Poll" in title:
+        poll_type = "result_poll"
+    else:
+        return  # Ignore unrelated embeds
+
+    # Extract team names and match type from the title
+    try:
+        match_details = title.split(":")[1].strip()  # e.g., "TSM vs FTX (BO5)"
+        teams, match_type = match_details.rsplit("(", 1)
+        team1, team2 = [team.strip() for team in teams.split("vs")]
+        match_type = match_type.strip(")")
+    except ValueError:
+        await message.channel.send("Error parsing match details from poll.")
+        return
+
+    # Extract match date (if needed, fallback to current date)
+    try:
+        match_date = description if description else datetime.now().date().isoformat()
+    except Exception:
+        await message.channel.send("Error parsing match date.")
+        return
+
+    # Locate the match in the database
+    cursor.execute('''
+    SELECT id FROM matches
+    WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?
+    ''', (team1, team2, match_type, match_date))
+    match_row = cursor.fetchone()
+
+    if not match_row:
+        await message.channel.send(f"No match found for {team1} vs {team2} ({match_type}) on {match_date}.")
+        return
+
+    match_id = match_row[0]  # Match ID in the database
+
+    # Determine which action to take based on poll type
+    if poll_type == "match_poll":
+        # Handle match poll (log predictions)
+        options = [field.value for field in embed.fields]
+        reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
 
         if str(reaction.emoji) not in reactions:
             await message.channel.send("Invalid reaction. Please select a valid option.")
@@ -267,12 +309,20 @@ async def on_reaction_add(reaction, user):
 
         await message.channel.send(f"{user.mention} your prediction has been logged: {pred_winner} with score {pred_score}.")
 
-    elif poll_type == "result":  # Handle result polls
-        match_id = poll_data["match_id"]
-        match_type = poll_data["match_type"]
-        winner, score = selected_option.split(" ", 1)
+    elif poll_type == "result_poll":
+        # Handle result poll (log result and award points)
+        options = [field.value for field in embed.fields]
+        reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
 
-        # Update the match result in the database
+        if str(reaction.emoji) not in reactions:
+            await message.channel.send("Invalid reaction. Please select a valid option.")
+            return
+
+        selected_index = reactions.index(str(reaction.emoji))
+        result = options[selected_index]
+        winner, score = result.split(" ", 1)
+
+        # Update match result in the database
         cursor.execute('''
         UPDATE matches
         SET winner = ?, score = ?
@@ -280,7 +330,7 @@ async def on_reaction_add(reaction, user):
         ''', (winner, score, match_id))
         conn.commit()
 
-        # Award points for predictions
+        # Award points for correct predictions
         cursor.execute('''
         SELECT id, user_id, pred_winner, pred_score
         FROM predictions
@@ -292,9 +342,11 @@ async def on_reaction_add(reaction, user):
             pred_id, user_id, pred_winner, pred_score = prediction
             points = 0
 
+            # Award points for correct winner
             if pred_winner == winner:
                 points += 1 if match_type == "BO1" else (2 if match_type == "BO3" else 3)
 
+                # Bonus points for correct score
                 if pred_score == score:
                     points += 1 if match_type == "BO3" else (2 if match_type == "BO5" else 0)
 
@@ -307,15 +359,9 @@ async def on_reaction_add(reaction, user):
         conn.commit()
 
         await message.channel.send(
-            f"Result recorded for match {poll_data['team1']} vs {poll_data['team2']} ({match_type}): {winner} wins with score {score}!"
+            f"Result recorded for match {team1} vs {team2} ({match_type}): {winner} wins with score {score}! Points have been awarded."
         )
 
-    # Remove poll from active polls
-    active_polls.pop(message.id)
-
-    # Optionally delete result poll message
-    if poll_type == "result":
-        await message.delete()
 
 
 @bot.command()
