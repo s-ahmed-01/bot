@@ -242,29 +242,30 @@ async def on_reaction_add(reaction, user):
     poll_data = active_polls[message.id]
     poll_type = poll_data["poll_type"]
 
-    if str(reaction.emoji) not in poll_data["reactions"]:
-        await message.channel.send("Invalid reaction.")
-        return
-
-    selected_index = poll_data["reactions"].index(str(reaction.emoji))
-    selected_option = poll_data["options"][selected_index]
-
-    if poll_type == "match":  # Handle match (prediction) polls
+    if poll_type == "match_poll":  # Handle match polls
         match_id = poll_data["match_id"]
-        match_type = poll_data["match_type"]
-        user_prediction = selected_option.split(" ", 1)
-        pred_winner = user_prediction[0]
-        pred_score = user_prediction[1] if len(user_prediction) > 1 else None
+        options = poll_data["options"]
+        reactions = poll_data["reactions"]
 
-        # Log the user's prediction in the database
+        if str(reaction.emoji) not in reactions:
+            await message.channel.send("Invalid reaction. Please select a valid option.")
+            return
+
+        selected_index = reactions.index(str(reaction.emoji))
+        prediction = options[selected_index]
+        pred_winner, pred_score = prediction.split(" ", 1)
+
+        # Insert prediction into the database
         cursor.execute('''
-        INSERT INTO predictions (user_id, match_id, pred_winner, pred_score, points)
+        INSERT INTO predictions (match_id, user_id, pred_winner, pred_score, points)
         VALUES (?, ?, ?, ?, 0)
-        ON CONFLICT(user_id, match_id) DO UPDATE SET pred_winner = excluded.pred_winner, pred_score = excluded.pred_score
-        ''', (user.id, match_id, pred_winner, pred_score))
+        ON CONFLICT(match_id, user_id) DO UPDATE SET
+        pred_winner = excluded.pred_winner,
+        pred_score = excluded.pred_score
+        ''', (match_id, user.id, pred_winner, pred_score))
         conn.commit()
 
-        await message.channel.send(f"Prediction logged for {user.name}: {selected_option} ({match_type})")
+        await message.channel.send(f"{user.mention} your prediction has been logged: {pred_winner} with score {pred_score}.")
 
     elif poll_type == "result":  # Handle result polls
         match_id = poll_data["match_id"]
