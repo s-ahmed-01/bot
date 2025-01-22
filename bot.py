@@ -168,67 +168,103 @@ async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str
 
 @bot.command()
 async def create_polls(ctx):
-    cursor.execute('''
-    SELECT id, match_date, match_type, team1, team2, poll_created
-    FROM matches
-    ORDER BY match_date
-    ''')
-    matches = cursor.fetchall()
-
-    if not matches:
-        await ctx.send("No matches scheduled!")
-        return
-
-    current_date = None
-    for match in matches:
-        match_id, match_date, match_type, team1, team2, poll_created = match
-
-        # Skip if poll already created for this match
-        if poll_created:
-            continue
-
-        # Add date header if the date changes
-        if match_date != current_date:
-            current_date = match_date
-            await ctx.send(f"**{current_date} Games**")
-
-        # Generate score options based on match type
-        if match_type == 'BO1':
-            options = [f"{team1} wins", f"{team2} wins"]
-        elif match_type == 'BO3':
-            options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
-        elif match_type == 'BO5':
-            options = [
-                f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
-                f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
-            ]
-
-        embed = discord.Embed(title=f"Match Poll: {team1} vs {team2} ({match_type})", description="React with your prediction!", color=discord.Color.blue())
-        for i, option in enumerate(options, start=1):
-            embed.add_field(name=f"Option {i}", value=option, inline=False)
-
-        # Send embed and add reactions
-        poll_message = await ctx.send(embed=embed)
-        numeric_emojis = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']  # Numeric emojis for options
-        for i in range(len(options)):
-            await poll_message.add_reaction(numeric_emojis[i])
-        
-        active_polls[poll_message.id] = {
-            "poll_type": "match_poll",
-            "match_id": match_id,
-            "match_type": match_type,
-            "options": options,
-            "reactions": numeric_emojis
-        }
-
-
-        # Mark poll as created
+    """
+    Creates prediction polls in Channel A and result polls in Channel B for all matches with poll_created = False.
+    Adds date headers to split matches by day for better navigation.
+    """
+    try:
+        # Fetch matches that have not had polls created yet
         cursor.execute('''
-        UPDATE matches
-        SET poll_created = TRUE
-        WHERE id = ?
-        ''', (match_id,))
-        conn.commit()
+        SELECT id, match_date, match_type, team1, team2
+        FROM matches
+        WHERE poll_created = FALSE
+        ORDER BY match_date
+        ''')
+        matches = cursor.fetchall()
+
+        if not matches:
+            await ctx.send("No matches without polls!")
+            return
+
+        # Define Channel IDs
+        prediction_channel_id = '1275834751697027213'   # Replace with Channel A ID
+        result_channel_id = '1330957256505692325'   # Replace with Channel B ID
+
+        # Fetch channels
+        prediction_channel = bot.get_channel(prediction_channel_id)
+        result_channel = bot.get_channel(result_channel_id)
+
+        if not prediction_channel or not result_channel:
+            await ctx.send("Error: One or both channels could not be found.")
+            return
+
+        # Track the current date for grouping matches
+        current_date = None
+
+        # Iterate over matches and create polls
+        for match in matches:
+            match_id, match_date, match_type, team1, team2 = match
+
+            # Add date header if the date changes
+            if match_date != current_date:
+                current_date = match_date
+                formatted_date = current_date.strftime("%d/%m/%Y")
+                await prediction_channel.send(f"**{formatted_date} Games**")
+                await result_channel.send(f"**{formatted_date} Games**")
+
+            # Generate score options based on match type
+            if match_type == 'BO1':
+                options = [f"{team1} wins", f"{team2} wins"]
+                reactions = ['1️⃣', '2️⃣']
+            elif match_type == 'BO3':
+                options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
+                reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣']
+            elif match_type == 'BO5':
+                options = [
+                    f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
+                    f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
+                ]
+                reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']
+
+            # Create prediction poll
+            prediction_embed = discord.Embed(
+                title=f"Prediction Poll: {team1} vs {team2} ({match_type})",
+                description=f"Match Date: {match_date}\nReact with your prediction!",
+                color=discord.Color.blue()
+            )
+            for i, option in enumerate(options, start=1):
+                prediction_embed.add_field(name=f"Option {i}", value=option, inline=False)
+
+            prediction_message = await prediction_channel.send(embed=prediction_embed)
+            for reaction in reactions:
+                await prediction_message.add_reaction(reaction)
+
+            # Create result poll
+            result_embed = discord.Embed(
+                title=f"Result Poll: {team1} vs {team2} ({match_type})",
+                description=f"Match Date: {match_date}\nReact with the correct result!",
+                color=discord.Color.green()
+            )
+            for i, option in enumerate(options, start=1):
+                result_embed.add_field(name=f"Option {i}", value=option, inline=False)
+
+            result_message = await result_channel.send(embed=result_embed)
+            for reaction in reactions:
+                await result_message.add_reaction(reaction)
+
+            # Update poll_created to True
+            cursor.execute('''
+            UPDATE matches
+            SET poll_created = TRUE
+            WHERE id = ?
+            ''', (match_id,))
+            conn.commit()
+
+        await ctx.send("Polls successfully created for all pending matches.")
+
+    except Exception as e:
+        await ctx.send(f"Error creating polls: {e}")
+
 
 @bot.event
 async def on_reaction_add(reaction, user):
@@ -363,69 +399,6 @@ async def on_reaction_add(reaction, user):
         )
 
 
-
-@bot.command()
-async def result_polls(ctx):
-    # Fetch matches for the upcoming week
-    today = datetime.today().date()
-    one_week_later = today + timedelta(days=7)
-
-    cursor.execute('''
-    SELECT id, team1, team2, match_type
-    FROM matches
-    WHERE match_date BETWEEN ? AND ?
-    ORDER BY match_date, id
-    ''', (today, one_week_later))
-    matches = cursor.fetchall()
-
-    if not matches:
-        await ctx.send("No matches found for the upcoming week.")
-        return
-
-    for match in matches:
-        match_id, team1, team2, match_type = match
-
-        # Generate score options based on match type
-        if match_type == 'BO1':
-            options = [f"{team1} wins", f"{team2} wins"]
-            reactions = ['1️⃣', '2️⃣']
-        elif match_type == 'BO3':
-            options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
-            reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣']
-        elif match_type == 'BO5':
-            options = [
-                f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
-                f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
-            ]
-            reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']
-
-        # Create embed for the poll
-        embed = discord.Embed(
-            title=f"Result Poll: {team1} vs {team2} ({match_type})",
-            description="React with the correct result to record it!",
-            color=discord.Color.green()
-        )
-        for i, option in enumerate(options, start=1):
-            embed.add_field(name=f"Option {i}", value=option, inline=False)
-
-        # Send the poll message
-        poll_message = await ctx.send(embed=embed)
-
-        # Add reactions
-        for reaction in reactions:
-            await poll_message.add_reaction(reaction)
-
-        # Store poll data
-        active_polls[poll_message.id] = {
-            "poll_type": "result",
-            "match_id": match_id,
-            "team1": team1,
-            "team2": team2,
-            "match_type": match_type,
-            "options": options,
-            "reactions": reactions
-        }
-
 @bot.command()
 async def show_matches(ctx):
     """
@@ -469,7 +442,6 @@ async def confirm_predictions(ctx):
             FROM matches
             WHERE match_date >= CURRENT_DATE
             ORDER BY match_date
-            LIMIT 3
         ''')
         upcoming_dates = [row[0] for row in cursor.fetchall()]
 
@@ -477,11 +449,12 @@ async def confirm_predictions(ctx):
             await ctx.send("There are no upcoming matches in the schedule.")
             return
 
-        # Fetch all matches for those dates, with left join to include missing predictions
+        # Fetch all matches for those dates, with LEFT JOIN to include missing predictions
         cursor.execute('''
-            SELECT matches.match_date, matches.team1, matches.team2, matches.match_type, predictions.pred_winner, predictions.pred_score
+            SELECT matches.match_date, matches.team1, matches.team2, matches.match_type, predictions.pred_winner, predictions.pred_score, predictions.points
             FROM matches
-            LEFT JOIN predictions ON matches.id = predictions.match_id AND predictions.user_id = ?
+            LEFT JOIN predictions 
+                ON matches.id = predictions.match_id AND predictions.user_id = ?
             WHERE matches.match_date IN ({})
             ORDER BY matches.match_date, matches.id
         '''.format(','.join(['?'] * len(upcoming_dates))), (user_id, *upcoming_dates))
@@ -492,18 +465,23 @@ async def confirm_predictions(ctx):
             return
 
         # Prepare a confirmation message
-        for match_date, team1, team2, match_type, pred_winner, pred_score in matches:
-            embed = discord.Embed(
-                title="Your Predictions for the Upcoming Scheduled Matches",
-                description="Here are the predictions you have made (or need to make) for the next scheduled days.",
-                color=discord.Color.green()
-            )
-
-        embed.add_field(
-            name=f"{team1} vs {team2} ({match_type}) - {match_date}",
-            value=f"Your Prediction: {pred_winner} {pred_score}",
-            inline=False
+        embed = discord.Embed(
+            title="Your Predictions for Upcoming Matches",
+            description="Here are the predictions you have made (or need to make) for the next scheduled days.",
+            color=discord.Color.blue()
         )
+
+        for match_date, team1, team2, match_type, pred_winner, pred_score, points in matches:
+            if pred_winner:
+                prediction_text = f"{pred_winner} {pred_score} (Points: {points if points else 0})"
+            else:
+                prediction_text = "No prediction made."
+
+            embed.add_field(
+                name=f"{team1} vs {team2} ({match_type}) - {match_date}",
+                value=prediction_text,
+                inline=False
+            )
 
         await ctx.send(embed=embed)
 
@@ -535,7 +513,7 @@ async def voting_summary(ctx, match_date: str):
     """
     try:
         # Convert provided date to match format
-        match_date_formatted = datetime.strptime(match_date, "%d-%m").strftime("%d-%m-%Y")
+        match_date_formatted = datetime.strptime(match_date, "%d-%m").strftime("%Y-%m-%d")
 
         # Fetch matches on the specified date
         cursor.execute('''
@@ -574,14 +552,13 @@ async def voting_summary(ctx, match_date: str):
         await ctx.send("Invalid date format! Please use DD-MM.")
 
 @bot.command()
-async def delete_matches_by_date(ctx, match_date: str):
+async def delete_match(ctx, match_id: str):
     try:
-        datetime.strptime(match_date, "%d-%m-%Y")  # Validate the date
-        cursor.execute('DELETE FROM matches WHERE match_date = ?', (match_date,))
+        cursor.execute('DELETE FROM matches WHERE id = ?', (match_id,))
         conn.commit()
-        await ctx.send(f"All matches scheduled on {match_date} have been deleted.")
+        await ctx.send(f"Match has been deleted.")
     except ValueError:
-        await ctx.send("Invalid date format! Please use DD-MM-YYYY.")
+        await ctx.send("Match not found.")
 
 @bot.command()
 async def schedule_poll_deletion(ctx, match_date: str):
