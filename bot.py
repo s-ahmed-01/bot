@@ -205,6 +205,9 @@ async def create_polls(ctx):
         for match in matches:
             match_id, match_date, match_type, team1, team2 = match
 
+            if isinstance(match_date, str):
+                match_date = datetime.strptime(match_date, "%Y-%m-%d").date()
+
             # Add date header if the date changes
             if match_date != current_date:
                 current_date = match_date
