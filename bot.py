@@ -187,8 +187,8 @@ async def create_polls(ctx):
             return
 
         # Define Channel IDs
-        prediction_channel_id = '1275834751697027213'   # Replace with Channel A ID
-        result_channel_id = '1330957256505692325'   # Replace with Channel B ID
+        prediction_channel_id = 1275834751697027213   # Replace with Channel A ID
+        result_channel_id = 1330957256505692325   # Replace with Channel B ID
 
         # Fetch channels
         prediction_channel = bot.get_channel(prediction_channel_id)
