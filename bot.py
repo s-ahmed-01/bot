@@ -231,7 +231,7 @@ async def create_polls(ctx):
 
             # Create prediction poll
             prediction_embed = discord.Embed(
-                title=f"Prediction Poll: {team1} vs {team2} ({match_type})",
+                title=f"Match Poll: {team1} vs {team2} ({match_type})",
                 description=f"Match Date: {match_date}\nReact with your prediction!",
                 color=discord.Color.blue()
             )
@@ -515,7 +515,7 @@ async def voting_summary(ctx, match_date: str):
         match_date: Date of the matches in DD-MM format.
     """
     try:
-        # Convert provided date to match format
+        # Convert provided date to match format (YYYY-MM-DD)
         match_date_formatted = datetime.strptime(match_date, "%d-%m").strftime("%Y-%m-%d")
 
         # Fetch matches on the specified date
@@ -523,29 +523,30 @@ async def voting_summary(ctx, match_date: str):
         SELECT id, team1, team2, match_type
         FROM matches
         WHERE match_date LIKE ?
-        ''', (f"%{match_date_formatted}%",))
+        ''', (f"%{match_date_formatted}%",))  # Match the date part (DD-MM)
         matches = cursor.fetchall()
 
         if not matches:
-            await ctx.send(f"No matches found for {match_date}!")
+            await ctx.send(f"No matches found for {match_date_formatted}!")
             return
 
         summary_message = f"**Voting Summary for {match_date_formatted}**\n"
         for match_id, team1, team2, match_type in matches:
             # Count votes for each option
             cursor.execute('''
-            SELECT pred_winner, COUNT(*) AS votes
+            SELECT pred_winner, pred_score, COUNT(*) AS votes
             FROM predictions
             WHERE match_id = ?
-            GROUP BY pred_winner
+            GROUP BY pred_winner, pred_score
             ORDER BY votes DESC
             ''', (match_id,))
             vote_data = cursor.fetchall()
 
-            summary_message += f"\n**Match:** {team1} vs {team2} ({match_type.upper()})\n"
+            # Append match summary
+            summary_message += f"\n**Match:** {team1} vs {team2} ({match_type.upper()}) - {match_date_formatted}\n"
             if vote_data:
-                for pred_winner, votes in vote_data:
-                    summary_message += f" - {pred_winner}: {votes} vote(s)\n"
+                for pred_winner, pred_score, votes in vote_data:
+                    summary_message += f" - {pred_winner} {pred_score}: {votes} vote(s)\n"
             else:
                 summary_message += "No votes recorded for this match.\n"
 
@@ -553,6 +554,7 @@ async def voting_summary(ctx, match_date: str):
 
     except ValueError:
         await ctx.send("Invalid date format! Please use DD-MM.")
+
 
 @bot.command()
 async def delete_match(ctx, match_id: str):
