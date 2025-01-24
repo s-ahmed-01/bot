@@ -521,8 +521,8 @@ async def voting_summary(ctx, match_date: str):
         cursor.execute('''
         SELECT id, team1, team2, match_type
         FROM matches
-        WHERE match_date LIKE ?
-        ''', (f"%{match_date_with_year}%",))  # Match the date part (DD-MM)
+        WHERE match_date = ?
+        ''', (match_date_with_year,))  # Match the date part (DD-MM)
         matches = cursor.fetchall()
 
         if not matches:
