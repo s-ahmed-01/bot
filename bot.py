@@ -515,7 +515,7 @@ async def voting_summary(ctx, match_date: str):
         # Convert provided date to match format (YYYY-MM-DD)
         match_date = datetime.strptime(match_date, "%d-%m")      
         current_year = datetime.now().year
-        match_date_with_year = parsed_date.replace(year=current_year)
+        match_date_with_year = match_date.replace(year=current_year)
 
         # Fetch matches on the specified date
         cursor.execute('''
