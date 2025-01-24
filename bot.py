@@ -572,21 +572,20 @@ async def delete_polls(match_date: str):
     """
     try:
         # Fetch the channel IDs where the polls are located
-        poll_channel_ids = [123456789012345678, 234567890123456789]  # Replace with actual channel IDs
-        for channel_id in poll_channel_ids:
-            channel = bot.get_channel(channel_id)
-            if channel is None:
-                print(f"Channel with ID {channel_id} not found.")
-                continue
+        poll_channel_id = 1275834751697027213  # Replace with actual channel IDs        
+        channel = bot.get_channel(poll_channel_id)
+        if channel is None:
+            print(f"Channel with ID {poll_channel_id} not found.")
+            continue
 
-            # Fetch all messages from the channel
-            async for message in channel.history(limit=100):  # Adjust the limit if needed
-                if (
-                    message.author == bot.user
-                    and message.embeds
-                    and match_date in message.embeds[0].description
-                ):
-                    await message.delete()
+        # Fetch all messages from the channel
+        async for message in channel.history(limit=100):  # Adjust the limit if needed
+            if (
+                message.author == bot.user
+                and message.embeds
+                and match_date in message.embeds[0].description
+            ):
+                await message.delete()
 
         print(f"All polls for {match_date} have been successfully deleted.")
 
