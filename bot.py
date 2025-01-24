@@ -522,7 +522,7 @@ async def voting_summary(ctx, match_date: str):
         SELECT id, team1, team2, match_type
         FROM matches
         WHERE match_date LIKE ?
-        ''', (f"%{match_date__with_year}%",))  # Match the date part (DD-MM)
+        ''', (f"%{match_date_with_year}%",))  # Match the date part (DD-MM)
         matches = cursor.fetchall()
 
         if not matches:
@@ -608,7 +608,7 @@ async def schedule_poll_deletion(ctx, match_date: str):
 
         # Schedule task
         scheduler.add_job(delete_polls, "date", run_date=deletion_time_utc, args=[match_date])
-        await ctx.send(f"Poll deletion for {match_date} scheduled at 4 PM UK time.")
+        await ctx.send(f"Poll deletion for {match_date} scheduled at 5 PM UK time.")
 
     except Exception as e:
         await ctx.send(f"Error scheduling poll deletion: {e}")
