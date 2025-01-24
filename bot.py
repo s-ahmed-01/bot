@@ -23,9 +23,6 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 scheduler = AsyncIOScheduler()
 uk_tz = pytz.timezone("Europe/London")
 
-# To store active polls
-active_polls = {}
-
 # Start the event loop and scheduler
 async def main():
     scheduler.start()  # Start the scheduler
@@ -516,21 +513,23 @@ async def voting_summary(ctx, match_date: str):
     """
     try:
         # Convert provided date to match format (YYYY-MM-DD)
-        match_date_formatted = datetime.strptime(match_date, "%d-%m").strftime("%Y-%m-%d")
+        match_date = datetime.strptime(match_date, "%d-%m")      
+        current_year = datetime.now().year
+        match_date_with_year = parsed_date.replace(year=current_year)
 
         # Fetch matches on the specified date
         cursor.execute('''
         SELECT id, team1, team2, match_type
         FROM matches
         WHERE match_date LIKE ?
-        ''', (f"%{match_date_formatted}%",))  # Match the date part (DD-MM)
+        ''', (f"%{match_date__with_year}%",))  # Match the date part (DD-MM)
         matches = cursor.fetchall()
 
         if not matches:
-            await ctx.send(f"No matches found for {match_date_formatted}!")
+            await ctx.send(f"No matches found for {match_date_with_year}!")
             return
 
-        summary_message = f"**Voting Summary for {match_date_formatted}**\n"
+        summary_message = f"**Voting Summary for {match_date_with_year}**\n"
         for match_id, team1, team2, match_type in matches:
             # Count votes for each option
             cursor.execute('''
@@ -543,7 +542,7 @@ async def voting_summary(ctx, match_date: str):
             vote_data = cursor.fetchall()
 
             # Append match summary
-            summary_message += f"\n**Match:** {team1} vs {team2} ({match_type.upper()}) - {match_date_formatted}\n"
+            summary_message += f"\n**Match:** {team1} vs {team2} ({match_type.upper()}) - {match_date_with_year}\n"
             if vote_data:
                 for pred_winner, pred_score, votes in vote_data:
                     summary_message += f" - {pred_winner} {pred_score}: {votes} vote(s)\n"
@@ -565,6 +564,36 @@ async def delete_match(ctx, match_id: str):
     except ValueError:
         await ctx.send("Match not found.")
 
+async def delete_polls(match_date: str):
+    """
+    Deletes all polls associated with the specified match_date.
+    Args:
+        match_date: The match date in YYYY-MM-DD format.
+    """
+    try:
+        # Fetch the channel IDs where the polls are located
+        poll_channel_ids = [123456789012345678, 234567890123456789]  # Replace with actual channel IDs
+        for channel_id in poll_channel_ids:
+            channel = bot.get_channel(channel_id)
+            if channel is None:
+                print(f"Channel with ID {channel_id} not found.")
+                continue
+
+            # Fetch all messages from the channel
+            async for message in channel.history(limit=100):  # Adjust the limit if needed
+                if (
+                    message.author == bot.user
+                    and message.embeds
+                    and match_date in message.embeds[0].description
+                ):
+                    await message.delete()
+
+        print(f"All polls for {match_date} have been successfully deleted.")
+
+    except Exception as e:
+        print(f"Error deleting polls for {match_date}: {e}")
+
+
 @bot.command()
 async def schedule_poll_deletion(ctx, match_date: str):
     """
@@ -575,7 +604,7 @@ async def schedule_poll_deletion(ctx, match_date: str):
         # Convert match_date to datetime
         match_date_dt = datetime.strptime(match_date, "%Y-%m-%d")
         deletion_time_utc = uk_tz.localize(
-            datetime.combine(match_date_dt, datetime.min.time()) + timedelta(hours=16)
+            datetime.combine(match_date_dt, datetime.min.time()) + timedelta(hours=17)
         ).astimezone(pytz.utc)  # Convert to UTC for the scheduler
 
         # Schedule task
