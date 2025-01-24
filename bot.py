@@ -576,7 +576,7 @@ async def delete_polls(match_date: str):
         channel = bot.get_channel(poll_channel_id)
         if channel is None:
             print(f"Channel with ID {poll_channel_id} not found.")
-        continue
+            continue
 
         # Fetch all messages from the channel
         async for message in channel.history(limit=100):  # Adjust the limit if needed
