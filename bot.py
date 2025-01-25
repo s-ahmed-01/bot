@@ -522,7 +522,7 @@ async def voting_summary(ctx, match_date: str):
         SELECT id, team1, team2, match_type
         FROM matches
         WHERE match_date = ?
-        ''', (match_date_with_year,))  # Match the date part (DD-MM)
+        ''', (match_date_with_year.strftime("%Y-%m-%d"),))  # Match the date part (DD-MM)
         matches = cursor.fetchall()
 
         if not matches:
@@ -607,7 +607,7 @@ async def schedule_poll_deletion(ctx, match_date: str):
         ).astimezone(pytz.utc)  # Convert to UTC for the scheduler
 
         # Schedule task
-        scheduler.add_job(delete_polls, "date", run_date=deletion_time_utc, args=[match_date])
+        scheduler.add_job(delete_polls, "date", run_date=deletion_time_utc, args=[match_date_dt])
         await ctx.send(f"Poll deletion for {match_date} scheduled at 5 PM UK time.")
 
     except Exception as e:
