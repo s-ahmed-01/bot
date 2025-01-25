@@ -400,7 +400,7 @@ async def on_reaction_add(reaction, user):
 
 
 @bot.command()
-async def show_matches(ctx):
+async def matches(ctx):
     """
     Display all matches currently in the database.
     """
@@ -432,7 +432,7 @@ async def show_matches(ctx):
     await ctx.send(matches_message)
 
 @bot.command()
-async def confirm_predictions(ctx):
+async def predictions(ctx):
     try:
         user_id = ctx.author.id
 
@@ -579,11 +579,10 @@ async def delete_polls(match_date: str):
             return
 
         # Fetch all messages from the channel
-        async for message in channel.history(limit=100):  # Adjust the limit if needed
+        async for message in channel.history(limit=200):  # Adjust the limit if needed
             if (
                 message.author == bot.user
                 and message.embeds
-                and match_date in message.embeds[0].description
             ):
                 await message.delete()
 
