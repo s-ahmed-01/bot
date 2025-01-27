@@ -84,11 +84,12 @@ conn.commit()
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS bonus_questions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    question_text TEXT NOT NULL,
-    question_type TEXT NOT NULL CHECK (question_type IN ('MCQ', 'NUMERICAL')),
-    options TEXT, -- JSON string for MCQ options, NULL for numerical questions
-    correct_answer TEXT NOT NULL, -- For MCQ, store the correct option; for numerical, store the range (e.g., "14-16").
-    date_posted DATE DEFAULT CURRENT_DATE,
+    question TEXT NOT NULL,
+    description TEXT NOT NULL,
+    options TEXT NOT NULL,
+    correct_answer TEXT,
+    date DATE,
+    poll_created BOOLEAN DEFAULT FALSE,
     points INTEGER DEFAULT 1
 );
 
@@ -164,10 +165,29 @@ async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str
         print("Invalid date format. Please use dd-mm.")
 
 @bot.command()
+async def add_bonus_question(ctx, date: datetime, question: str, description: str, options: str, points: int):
+    """
+    Adds a bonus question to the database.
+    """
+    try:
+        cursor.execute('''
+        INSERT INTO bonus_questions (date, question, description, options, points)
+        VALUES (?, ?, ?, ?)
+        ''', (date, question, description, correct_answer, points))
+        conn.commit()
+
+        await ctx.send(f"Bonus question added for {date}: {question}")
+    except Exception as e:
+        await ctx.send(f"Error adding bonus question: {e}")
+
+
+@bot.command()
 async def create_polls(ctx):
     """
-    Creates prediction polls in Channel A and result polls in Channel B for all matches with poll_created = False.
-    Adds date headers to split matches by day for better navigation.
+    Creates prediction polls in Channel A and result polls in Channel B for:
+    1. Matches with poll_created = False.
+    2. Bonus questions with poll_created = False.
+    Adds date headers to split matches and questions by day for better navigation.
     """
     try:
         # Fetch matches that have not had polls created yet
@@ -179,8 +199,17 @@ async def create_polls(ctx):
         ''')
         matches = cursor.fetchall()
 
-        if not matches:
-            await ctx.send("No matches without polls!")
+        # Fetch bonus questions that have not had polls created yet
+        cursor.execute('''
+        SELECT id, match_date, question, description, options
+        FROM bonus_questions
+        WHERE poll_created = FALSE
+        ORDER BY match_date
+        ''')
+        bonus_questions = cursor.fetchall()
+
+        if not matches and not bonus_questions:
+            await ctx.send("No matches or bonus questions without polls!")
             return
 
         # Define Channel IDs
@@ -195,10 +224,10 @@ async def create_polls(ctx):
             await ctx.send("Error: One or both channels could not be found.")
             return
 
-        # Track the current date for grouping matches
+        # Track the current date for grouping matches and questions
         current_date = None
 
-        # Iterate over matches and create polls
+        # --- Create polls for matches ---
         for match in matches:
             match_id, match_date, match_type, team1, team2 = match
 
@@ -226,44 +255,107 @@ async def create_polls(ctx):
                 ]
                 reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']
 
-            # Create prediction poll
-            prediction_embed = discord.Embed(
-                title=f"Match Poll: {team1} vs {team2} ({match_type})",
-                description=f"Match Date: {match_date}\nReact with your prediction!",
-                color=discord.Color.blue()
-            )
-            for i, option in enumerate(options, start=1):
-                prediction_embed.add_field(name=f"Option {i}", value=option, inline=False)
+            # Create prediction and result polls for the match
+            await create_match_poll(prediction_channel, result_channel, match_id, match_date, team1, team2, match_type, options, reactions)
 
-            prediction_message = await prediction_channel.send(embed=prediction_embed)
-            for reaction in reactions:
-                await prediction_message.add_reaction(reaction)
+        # --- Create polls for bonus questions ---
+        for question in bonus_questions:
+            question_id, match_date, question_text, description, options_json = question
+            options = json.loads(options_json)  # Parse options stored as JSON
+            reactions = [f"{i + 1}️⃣" for i in range(len(options))]
 
-            # Create result poll
-            result_embed = discord.Embed(
-                title=f"Result Poll: {team1} vs {team2} ({match_type})",
-                description=f"Match Date: {match_date}\nReact with the correct result!",
-                color=discord.Color.green()
-            )
-            for i, option in enumerate(options, start=1):
-                result_embed.add_field(name=f"Option {i}", value=option, inline=False)
+            # Add date header if the date changes
+            if match_date != current_date:
+                current_date = match_date
+                formatted_date = current_date.strftime("%d/%m/%Y")
+                await prediction_channel.send(f"**{formatted_date} Bonus Questions**")
+                await result_channel.send(f"**{formatted_date} Bonus Questions**")
 
-            result_message = await result_channel.send(embed=result_embed)
-            for reaction in reactions:
-                await result_message.add_reaction(reaction)
+            # Create prediction and result polls for the bonus question
+            await create_bonus_poll(prediction_channel, result_channel, question_id, question_text, description, options, reactions)
 
-            # Update poll_created to True
-            cursor.execute('''
-            UPDATE matches
-            SET poll_created = TRUE
-            WHERE id = ?
-            ''', (match_id,))
-            conn.commit()
-
-        await ctx.send("Polls successfully created for all pending matches.")
+        await ctx.send("Polls successfully created for all pending matches and bonus questions.")
 
     except Exception as e:
         await ctx.send(f"Error creating polls: {e}")
+
+
+async def create_match_poll(prediction_channel, result_channel, match_id, match_date, team1, team2, match_type, options, reactions):
+    """
+    Helper function to create match polls.
+    """
+    # Create prediction poll
+    prediction_embed = discord.Embed(
+        title=f"Match Poll: {team1} vs {team2} ({match_type})",
+        description=f"Match Date: {match_date}\nReact with your prediction!",
+        color=discord.Color.blue()
+    )
+    for i, option in enumerate(options, start=1):
+        prediction_embed.add_field(name=f"Option {i}", value=option, inline=False)
+
+    prediction_message = await prediction_channel.send(embed=prediction_embed)
+    for reaction in reactions:
+        await prediction_message.add_reaction(reaction)
+
+    # Create result poll
+    result_embed = discord.Embed(
+        title=f"Result Poll: {team1} vs {team2} ({match_type})",
+        description=f"Match Date: {match_date}\nReact with the correct result!",
+        color=discord.Color.green()
+    )
+    for i, option in enumerate(options, start=1):
+        result_embed.add_field(name=f"Option {i}", value=option, inline=False)
+
+    result_message = await result_channel.send(embed=result_embed)
+    for reaction in reactions:
+        await result_message.add_reaction(reaction)
+
+    # Update poll_created to True
+    cursor.execute('''
+    UPDATE matches
+    SET poll_created = TRUE
+    WHERE id = ?
+    ''', (match_id,))
+    conn.commit()
+
+
+async def create_bonus_poll(prediction_channel, result_channel, question_id, question_text, description, options, reactions):
+    """
+    Helper function to create bonus question polls.
+    """
+    # Create prediction poll
+    prediction_embed = discord.Embed(
+        title=f"Bonus Question: {question_text}",
+        description=description,
+        color=discord.Color.gold()
+    )
+    for i, option in enumerate(options, start=1):
+        prediction_embed.add_field(name=f"Option {i}", value=option, inline=False)
+
+    prediction_message = await prediction_channel.send(embed=prediction_embed)
+    for reaction in reactions:
+        await prediction_message.add_reaction(reaction)
+
+    # Create result poll
+    result_embed = discord.Embed(
+        title=f"Bonus Question Result: {question_text}",
+        description=description,
+        color=discord.Color.orange()
+    )
+    for i, option in enumerate(options, start=1):
+        result_embed.add_field(name=f"Option {i}", value=option, inline=False)
+
+    result_message = await result_channel.send(embed=result_embed)
+    for reaction in reactions:
+        await result_message.add_reaction(reaction)
+
+    # Update poll_created to True
+    cursor.execute('''
+    UPDATE bonus_questions
+    SET poll_created = TRUE
+    WHERE id = ?
+    ''', (question_id,))
+    conn.commit()
 
 
 @bot.event
@@ -286,117 +378,188 @@ async def on_reaction_add(reaction, user):
         poll_type = "match_poll"
     elif "Result Poll" in title:
         poll_type = "result_poll"
+    elif "Bonus Question" in title:
+        poll_type = "bonus_poll"
+    elif "Bonus Question Result" in title:
+        poll_type = "bonus_result"
     else:
         return  # Ignore unrelated embeds
 
-    # Extract team names and match type from the title
-    try:
-        match_details = title.split(":")[1].strip()  # e.g., "TSM vs FTX (BO5)"
-        teams, match_type = match_details.rsplit("(", 1)
-        team1, team2 = [team.strip() for team in teams.split("vs")]
-        match_type = match_type.strip(")")
-    except ValueError:
-        await message.channel.send("Error parsing match details from poll.")
-        return
-
-    # Extract match date (if needed, fallback to current date)
-    try:
-        match_date = description if description else datetime.now().date().isoformat()
-    except Exception:
-        await message.channel.send("Error parsing match date.")
-        return
-
-    # Locate the match in the database
-    cursor.execute('''
-    SELECT id FROM matches
-    WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?
-    ''', (team1, team2, match_type, match_date))
-    match_row = cursor.fetchone()
-
-    if not match_row:
-        await message.channel.send(f"No match found for {team1} vs {team2} ({match_type}) on {match_date}.")
-        return
-
-    match_id = match_row[0]  # Match ID in the database
-
-    # Determine which action to take based on poll type
-    if poll_type == "match_poll":
-        # Handle match poll (log predictions)
-        options = [field.value for field in embed.fields]
-        reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
-
-        if str(reaction.emoji) not in reactions:
-            await message.channel.send("Invalid reaction. Please select a valid option.")
+    if poll_type == "match_poll" or poll_type == "result_poll":
+        # Extract team names and match type from the title
+        try:
+            match_details = title.split(":")[1].strip()  # e.g., "TSM vs FTX (BO5)"
+            teams, match_type = match_details.rsplit("(", 1)
+            team1, team2 = [team.strip() for team in teams.split("vs")]
+            match_type = match_type.strip(")")
+        except ValueError:
+            await message.channel.send("Error parsing match details from poll.")
             return
 
-        selected_index = reactions.index(str(reaction.emoji))
-        prediction = options[selected_index]
-        pred_winner, pred_score = prediction.split(" ", 1)
-
-        # Insert prediction into the database
-        cursor.execute('''
-        INSERT INTO predictions (match_id, user_id, pred_winner, pred_score, points)
-        VALUES (?, ?, ?, ?, 0)
-        ON CONFLICT(match_id, user_id) DO UPDATE SET
-        pred_winner = excluded.pred_winner,
-        pred_score = excluded.pred_score
-        ''', (match_id, user.id, pred_winner, pred_score))
-        conn.commit()
-
-        await message.channel.send(f"{user.mention} your prediction has been logged: {pred_winner} with score {pred_score}.")
-
-    elif poll_type == "result_poll":
-        # Handle result poll (log result and award points)
-        options = [field.value for field in embed.fields]
-        reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
-
-        if str(reaction.emoji) not in reactions:
-            await message.channel.send("Invalid reaction. Please select a valid option.")
+        # Extract match date (if needed, fallback to current date)
+        try:
+            match_date = description if description else datetime.now().date().isoformat()
+        except Exception:
+            await message.channel.send("Error parsing match date.")
             return
 
-        selected_index = reactions.index(str(reaction.emoji))
-        result = options[selected_index]
-        winner, score = result.split(" ", 1)
-
-        # Update match result in the database
+        # Locate the match in the database
         cursor.execute('''
-        UPDATE matches
-        SET winner = ?, score = ?
-        WHERE id = ?
-        ''', (winner, score, match_id))
-        conn.commit()
+        SELECT id FROM matches
+        WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?
+        ''', (team1, team2, match_type, match_date))
+        match_row = cursor.fetchone()
 
-        # Award points for correct predictions
-        cursor.execute('''
-        SELECT id, user_id, pred_winner, pred_score
-        FROM predictions
-        WHERE match_id = ?
-        ''', (match_id,))
-        predictions = cursor.fetchall()
+        if not match_row:
+            await message.channel.send(f"No match found for {team1} vs {team2} ({match_type}) on {match_date}.")
+            return
 
-        for prediction in predictions:
-            pred_id, user_id, pred_winner, pred_score = prediction
-            points = 0
+        match_id = match_row[0]  # Match ID in the database
 
-            # Award points for correct winner
-            if pred_winner == winner:
-                points += 1 if match_type == "BO1" else (2 if match_type == "BO3" else 3)
+        # Determine which action to take based on poll type
+        if poll_type == "match_poll":
+            # Handle match poll (log predictions)
+            options = [field.value for field in embed.fields]
+            reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
 
-                # Bonus points for correct score
-                if pred_score == score:
-                    points += 1 if match_type == "BO3" else (2 if match_type == "BO5" else 0)
+            if str(reaction.emoji) not in reactions:
+                await message.channel.send("Invalid reaction. Please select a valid option.")
+                return
 
-            # Update points in the predictions table
+            selected_index = reactions.index(str(reaction.emoji))
+            prediction = options[selected_index]
+            pred_winner, pred_score = prediction.split(" ", 1)
+
+            # Insert prediction into the database
             cursor.execute('''
-            UPDATE predictions
-            SET points = ?
-            WHERE id = ?
-            ''', (points, pred_id))
-        conn.commit()
+            INSERT INTO predictions (match_id, user_id, pred_winner, pred_score, points)
+            VALUES (?, ?, ?, ?, 0)
+            ON CONFLICT(match_id, user_id) DO UPDATE SET
+            pred_winner = excluded.pred_winner,
+            pred_score = excluded.pred_score
+            ''', (match_id, user.id, pred_winner, pred_score))
+            conn.commit()
 
-        await message.channel.send(
-            f"Result recorded for match {team1} vs {team2} ({match_type}): {winner} wins with score {score}! Points have been awarded."
-        )
+            await message.channel.send(f"{user.mention} your prediction has been logged: {pred_winner} with score {pred_score}.")
+
+        elif poll_type == "result_poll":
+            # Handle result poll (log result and award points)
+            options = [field.value for field in embed.fields]
+            reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
+
+            if str(reaction.emoji) not in reactions:
+                await message.channel.send("Invalid reaction. Please select a valid option.")
+                return
+
+            selected_index = reactions.index(str(reaction.emoji))
+            result = options[selected_index]
+            winner, score = result.split(" ", 1)
+
+            # Update match result in the database
+            cursor.execute('''
+            UPDATE matches
+            SET winner = ?, score = ?
+            WHERE id = ?
+            ''', (winner, score, match_id))
+            conn.commit()
+
+            # Award points for correct predictions
+            cursor.execute('''
+            SELECT id, user_id, pred_winner, pred_score
+            FROM predictions
+            WHERE match_id = ?
+            ''', (match_id,))
+            predictions = cursor.fetchall()
+
+            for prediction in predictions:
+                pred_id, user_id, pred_winner, pred_score = prediction
+                points = 0
+
+                # Award points for correct winner
+                if pred_winner == winner:
+                    points += 1 if match_type == "BO1" else (2 if match_type == "BO3" else 3)
+
+                    # Bonus points for correct score
+                    if pred_score == score:
+                        points += 1 if match_type == "BO3" else (2 if match_type == "BO5" else 0)
+
+                # Update points in the predictions table
+                cursor.execute('''
+                UPDATE predictions
+                SET points = ?
+                WHERE id = ?
+                ''', (points, pred_id))
+            conn.commit()
+
+            await message.channel.send(
+                f"Result recorded for match {team1} vs {team2} ({match_type}): {winner} wins with score {score}! Points have been awarded."
+            )
+    elif poll_type == "bonus_poll" or poll_type == "bonus_result":
+        # Locate the question in the database
+        question_text = title.split(":")[1].strip()  # Extract question text
+        cursor.execute('''
+        SELECT id, options FROM bonus_questions
+        WHERE question = ?
+        ''', (question_text,))
+        question_row = cursor.fetchone()
+
+        if not question_row:
+            await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
+            return
+
+        question_id, options_json = question_row
+        options = json.loads(options_json)  # Load options as a list
+        reactions = [f"{i + 1}️⃣" for i in range(len(options))]
+
+        if str(reaction.emoji) not in reactions:
+            await message.channel.send("Invalid reaction. Please select a valid option.")
+            return
+
+        # --- Handle user reactions ---
+        user_reaction_key = f"bonus_{question_id}_{user.id}"  # Unique key for this question and user
+        if poll_type == "bonus_poll":
+            # Track the user's selected reactions
+            if not hasattr(bot, "user_reactions"):
+                bot.user_reactions = {}
+            user_selections = bot.user_reactions.get(user_reaction_key, set())
+            selected_index = reactions.index(str(reaction.emoji))
+            selected_option = options[selected_index]
+
+            if selected_option in user_selections:
+                user_selections.remove(selected_option)  # Allow toggling reactions
+            else:
+                user_selections.add(selected_option)
+
+            bot.user_reactions[user_reaction_key] = user_selections
+            await message.channel.send(
+                f"{user.mention}, your current selections for '{question_text}' are: {', '.join(user_selections)}"
+            )
+
+        elif poll_type == "bonus_result":
+            # Evaluate user's answer once they confirm (e.g., a specific emoji or timeout could trigger this)
+            user_selections = bot.user_reactions.get(user_reaction_key, set())
+            cursor.execute('''
+            SELECT correct_answer FROM bonus_questions
+            WHERE id = ?
+            ''', (question_id,))
+            correct_answer_row = cursor.fetchone()
+
+            if not correct_answer_row:
+                await message.channel.send("Error: No correct answer found for this bonus question.")
+                return
+
+            correct_answers = set(json.loads(correct_answer_row[0]))  # Parse correct answers
+            if user_selections == correct_answers:
+                # Award points if the user's selections match exactly
+                cursor.execute('''
+                INSERT INTO bonus_predictions (question_id, user_id, points)
+                VALUES (?, ?, 1)
+                ON CONFLICT(question_id, user_id) DO UPDATE SET points = 1
+                ''', (question_id, user.id))
+                conn.commit()
+                await message.channel.send(f"✅ {user.mention}, your answer is correct! You've earned 1 point.")
+            else:
+                await message.channel.send(f"❌ {user.mention}, your answer is incorrect. Correct answers: {', '.join(correct_answers)}")
 
 
 @bot.command()
