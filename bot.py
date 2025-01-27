@@ -198,7 +198,7 @@ async def create_polls(ctx):
 
         # Fetch bonus questions that have not had polls created yet
         cursor.execute('''
-        SELECT id, match_date, question, description, options
+        SELECT id, date, question, description, options
         FROM bonus_questions
         WHERE poll_created = FALSE
         ORDER BY match_date
