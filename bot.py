@@ -178,7 +178,7 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
 
         cursor.execute('''
         INSERT INTO bonus_questions (date, question, description, options, points)
-        VALUES (?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?)
         ''', (match_date_with_year.strftime("%Y-%m-%d"), question, description, options_list, points))
         conn.commit()
 
