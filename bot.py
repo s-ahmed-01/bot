@@ -508,9 +508,9 @@ async def on_reaction_add(reaction, user):
             await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
             return
 
-        question_id, options_json = question_row
-        options = json.loads(options_json)  # Load options as a list
-        reactions = [f"{i + 1}️⃣" for i in range(len(options))]
+        question_id, options = question_row
+        option_split = [option.strip() for option in options.split(",")]
+        reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
 
         if str(reaction.emoji) not in reactions:
             await message.channel.send("Invalid reaction. Please select a valid option.")
@@ -549,7 +549,7 @@ async def on_reaction_add(reaction, user):
                 await message.channel.send("Error: No correct answer found for this bonus question.")
                 return
 
-            correct_answers = set(json.loads(correct_answer_row[0]))  # Parse correct answers
+            correct_answers = set([correct_answer.strip() for correct_answer in correct_answer_row.split(",")])  # Parse correct answers
             if user_selections == correct_answers:
                 # Award points if the user's selections match exactly
                 cursor.execute('''
