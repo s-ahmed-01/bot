@@ -165,15 +165,19 @@ async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str
         print("Invalid date format. Please use dd-mm.")
 
 @bot.command()
-async def add_bonus_question(ctx, date: datetime, question: str, description: str, options: str, points: int):
+async def add_bonus_question(ctx, date: str, question: str, description: str, options: str, points: int):
     """
     Adds a bonus question to the database.
     """
     try:
+        parsed_date = datetime.strptime(date, "%d-%m")
+        current_year = datetime.now().year
+        match_date_with_year = parsed_date.replace(year=current_year)
+
         cursor.execute('''
         INSERT INTO bonus_questions (date, question, description, options, points)
         VALUES (?, ?, ?, ?)
-        ''', (date, question, description, options, points))
+        ''', (match_date_with_year.strftime("%Y-%m-%d"), question, description, options, points))
         conn.commit()
 
         await ctx.send(f"Bonus question added for {date}: {question}")
