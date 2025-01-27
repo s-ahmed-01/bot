@@ -174,10 +174,12 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
         current_year = datetime.now().year
         match_date_with_year = parsed_date.replace(year=current_year)
 
+        options_list = [option.strip() for option in options.split(",")]
+
         cursor.execute('''
         INSERT INTO bonus_questions (date, question, description, options, points)
         VALUES (?, ?, ?, ?)
-        ''', (match_date_with_year.strftime("%Y-%m-%d"), question, description, options, points))
+        ''', (match_date_with_year.strftime("%Y-%m-%d"), question, description, options_list, points))
         conn.commit()
 
         await ctx.send(f"Bonus question added for {date}: {question}")
