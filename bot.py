@@ -553,10 +553,10 @@ async def on_reaction_add(reaction, user):
             if user_selections == correct_answers:
                 # Award points if the user's selections match exactly
                 cursor.execute('''
-                INSERT INTO bonus_predictions (question_id, user_id, points)
-                VALUES (?, ?, 1)
-                ON CONFLICT(question_id, user_id) DO UPDATE SET points = 1
-                ''', (question_id, user.id))
+                INSERT INTO leaderboard (user_id, points)
+                VALUES (?, 1)
+                ON CONFLICT(user_id) DO UPDATE SET points = points + 1
+                ''', (user.id,))
                 conn.commit()
                 await message.channel.send(f"✅ {user.mention}, your answer is correct! You've earned 1 point.")
             else:
