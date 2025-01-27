@@ -132,13 +132,6 @@ async def leaderboard(ctx):
 
     await ctx.send(leaderboard_message)
 
-# Command: Trivia (example)
-@bot.command()
-async def trivia(ctx):
-    question = "What year did Discord launch?"
-    options = ["2015", "2016", "2017", "2018"]
-    await ctx.send(f"**Trivia Time!**\n{question}\nOptions: {', '.join(options)}")
-
 @bot.command()
 async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str):
     """
@@ -174,12 +167,10 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
         current_year = datetime.now().year
         match_date_with_year = parsed_date.replace(year=current_year)
 
-        options_list = [option.strip() for option in options.split(",")]
-
         cursor.execute('''
         INSERT INTO bonus_questions (date, question, description, options, points)
         VALUES (?, ?, ?, ?, ?)
-        ''', (match_date_with_year.strftime("%Y-%m-%d"), question, description, options_list, points))
+        ''', (match_date_with_year.strftime("%Y-%m-%d"), question, description, options, points))
         conn.commit()
 
         await ctx.send(f"Bonus question added for {date}: {question}")
@@ -266,9 +257,9 @@ async def create_polls(ctx):
 
         # --- Create polls for bonus questions ---
         for question in bonus_questions:
-            question_id, match_date, question_text, description, options_json = question
-            options = json.loads(options_json)  # Parse options stored as JSON
-            reactions = [f"{i + 1}️⃣" for i in range(len(options))]
+            question_id, match_date, question_text, description, options = question
+            option_split = [option.strip() for option in options.split(",")]
+            reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
 
             # Add date header if the date changes
             if match_date != current_date:
@@ -278,7 +269,7 @@ async def create_polls(ctx):
                 await result_channel.send(f"**{formatted_date} Bonus Questions**")
 
             # Create prediction and result polls for the bonus question
-            await create_bonus_poll(prediction_channel, result_channel, question_id, question_text, description, options, reactions)
+            await create_bonus_poll(prediction_channel, result_channel, question_id, question_text, description, option_split, reactions)
 
         await ctx.send("Polls successfully created for all pending matches and bonus questions.")
 
