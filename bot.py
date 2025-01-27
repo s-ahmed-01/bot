@@ -258,6 +258,10 @@ async def create_polls(ctx):
         # --- Create polls for bonus questions ---
         for question in bonus_questions:
             question_id, match_date, question_text, description, options = question
+
+            if isinstance(match_date, str):
+                match_date = datetime.strptime(match_date, "%Y-%m-%d").date()
+
             option_split = [option.strip() for option in options.split(",")]
             reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
 
