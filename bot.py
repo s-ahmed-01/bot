@@ -173,7 +173,7 @@ async def add_bonus_question(ctx, date: datetime, question: str, description: st
         cursor.execute('''
         INSERT INTO bonus_questions (date, question, description, options, points)
         VALUES (?, ?, ?, ?)
-        ''', (date, question, description, correct_answer, points))
+        ''', (date, question, description, options, points))
         conn.commit()
 
         await ctx.send(f"Bonus question added for {date}: {question}")
