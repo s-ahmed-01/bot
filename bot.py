@@ -549,7 +549,7 @@ async def on_reaction_add(reaction, user):
                 await message.channel.send("Error: No correct answer found for this bonus question.")
                 return
 
-            correct_answers = set([correct_answer.strip() for correct_answer in correct_answer_row.split(",")])  # Parse correct answers
+            correct_answers = set([correct_answer.strip() for correct_answer in correct_answer_row[0].split(",")])  # Parse correct answers
             if user_selections == correct_answers:
                 # Award points if the user's selections match exactly
                 cursor.execute('''
