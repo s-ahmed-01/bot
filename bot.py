@@ -540,7 +540,7 @@ async def on_reaction_add(reaction, user):
             # Evaluate user's answer once they confirm (e.g., a specific emoji or timeout could trigger this)
             user_selections = bot.user_reactions.get(user_reaction_key, set())
             cursor.execute('''
-            SELECT correct_answer FROM bonus_questions
+            SELECT answer FROM bonus_questions
             WHERE id = ?
             ''', (question_id,))
             correct_answer_row = cursor.fetchone()
