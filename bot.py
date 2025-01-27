@@ -379,10 +379,10 @@ async def on_reaction_add(reaction, user):
         poll_type = "match_poll"
     elif "Result Poll" in title:
         poll_type = "result_poll"
-    elif "Bonus Question" in title:
-        poll_type = "bonus_poll"
     elif "Bonus Question Result" in title:
         poll_type = "bonus_result"
+    elif "Bonus Question" in title:
+        poll_type = "bonus_poll"
     else:
         return  # Ignore unrelated embeds
 
