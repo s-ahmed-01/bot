@@ -540,9 +540,9 @@ async def on_reaction_add(reaction, user):
 
                     # Add or remove from user selections
                     if selected_option in user_selections:
-                        user_selections.remove(selected_option)  # Allow toggling reactions
+                        user_selections.remove(reactions[selected_index])  # Remove the emoji
                     else:
-                        user_selections.add(selected_option)
+                        user_selections.add(reactions[selected_index])  # Add the emoji
 
                     # Update the bot's tracked reactions
                     bot.user_reactions[user_reaction_key] = user_selections
