@@ -534,8 +534,8 @@ async def on_reaction_add(reaction, user):
                 # Ensure reactions are aligned with options
                 selected_index = reactions.index(str(reaction.emoji))
                 print(f"Selected index: {selected_index}")  # Log selected index for debugging
-                if selected_index < len(options):
-                    selected_option = options[selected_index].strip()  # Get the correct option string
+                if selected_index < len(option_split):
+                    selected_option = option_split[selected_index].strip()  # Get the correct option string
                     print(f"Selected option: {selected_option}")  # Log selected option for debugging
 
                     # Add or remove from user selections
