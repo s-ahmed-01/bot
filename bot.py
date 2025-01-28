@@ -575,7 +575,7 @@ async def on_reaction_add(reaction, user):
 
             # Create a mapping of emojis to options
             try:
-                emoji_to_option = {reaction: option.strip() for reaction, option in zip(reactions, option_split)}
+                emoji_to_option = {reaction.strip(): option.strip() for reaction, option in zip(reactions, option_split)}
             except Exception as e:
                 await message.channel.send(f"Error while creating emoji-to-option mapping: {str(e)}")
                 return
