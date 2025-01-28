@@ -607,7 +607,7 @@ async def on_reaction_add(reaction, user):
                 # Award points if the user's selections match the correct options
                 if user_selections_mapped == correct_answers_mapped:
                     cursor.execute('''
-                    INSERT INTO leaderboard (user_id, points)
+                    INSERT INTO leaderboard (username, points)
                     VALUES (?, 1)
                     ON CONFLICT(user_id) DO UPDATE SET points = points + 1
                     ''', (user_id,))
