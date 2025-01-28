@@ -574,7 +574,7 @@ async def on_reaction_add(reaction, user):
                 return
 
             # Create a mapping of emojis to options
-            emoji_to_option = {reaction: option.strip() for reaction, option in zip(reactions, options)}
+            emoji_to_option = {reaction: option_split.strip() for reaction, option in zip(reactions, option_split)}
 
             # Debug: Print emoji-to-option mapping
             print(f"Emoji to Option Mapping: {emoji_to_option}")
