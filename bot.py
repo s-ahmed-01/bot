@@ -517,27 +517,47 @@ async def on_reaction_add(reaction, user):
             return
 
         # --- Handle user reactions ---
+        # --- Handle user reactions ---
         user_reaction_key = f"bonus_{question_id}_{user.id}"  # Unique key for this question and user
         if poll_type == "bonus_poll":
             # Track the user's selected reactions
             if not hasattr(bot, "user_reactions"):
                 bot.user_reactions = {}
+
             user_selections = bot.user_reactions.get(user_reaction_key, set())
-            selected_index = reactions.index(str(reaction.emoji))
-            selected_option = options[selected_index]
 
-            if selected_index < len(options):
-                selected_option = options[selected_index].strip()
+            # Log reactions and options to debug
+            print(f"Reactions: {reactions}")
+            print(f"Options: {options}")
 
-            if selected_option in user_selections:
-                user_selections.remove(selected_option)  # Allow toggling reactions
-            else:
-                user_selections.add(selected_option)
+            try:
+                # Ensure reactions are aligned with options
+                selected_index = reactions.index(str(reaction.emoji))
+                print(f"Selected index: {selected_index}")  # Log selected index for debugging
+                if selected_index < len(options):
+                    selected_option = options[selected_index].strip()  # Get the correct option string
+                    print(f"Selected option: {selected_option}")  # Log selected option for debugging
 
-            bot.user_reactions[user_reaction_key] = user_selections
-            await message.channel.send(
-                f"{user.mention}, your current selections for '{question_text}' are: {', '.join(user_selections)}"
-            )
+                    # Add or remove from user selections
+                    if selected_option in user_selections:
+                        user_selections.remove(selected_option)  # Allow toggling reactions
+                    else:
+                        user_selections.add(selected_option)
+
+                    # Update the bot's tracked reactions
+                    bot.user_reactions[user_reaction_key] = user_selections
+
+                    # Notify the user of their current selections
+                    await message.channel.send(
+                        f"{user.mention}, your current selections for '{question_text}' are: {', '.join(user_selections)}"
+                    )
+                else:
+                    await message.channel.send("Error: Invalid reaction. Please select a valid option.")
+
+            except ValueError:
+                # Handle cases where the emoji is not in the reactions list
+                await message.channel.send("Error: Reaction not recognized. Please react with a valid emoji.")
+
 
         elif poll_type == "bonus_result":
             # Fetch user responses for this question
