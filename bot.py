@@ -568,16 +568,22 @@ async def on_reaction_add(reaction, user):
                 return
 
             # Get the correct answer emojis from the bonus result poll
-            correct_answers = set([reaction.emoji for reaction in message.reactions if reaction.count > 1])
+            correct_answers = {reaction.emoji for reaction in message.reactions if reaction.count > 1}
             if not correct_answers:
                 await message.channel.send("Error: No correct answers provided for this bonus question.")
                 return
 
             # Create a mapping of emojis to options
-            emoji_to_option = {reaction: option for reaction, option in zip(reactions, option_split)}
+            try:
+                emoji_to_option = {reaction: option.strip() for reaction, option in zip(reactions, option_split)}
+            except Exception as e:
+                await message.channel.send(f"Error while creating emoji-to-option mapping: {str(e)}")
+                return
 
             # Debug: Print emoji-to-option mapping
             print(f"Emoji to Option Mapping: {emoji_to_option}")
+            print(f"User Responses: {user_responses}")
+            print(f"Correct Answers: {correct_answers}")
 
             # Iterate through user responses and award points
             awarded_users = []
@@ -586,9 +592,13 @@ async def on_reaction_add(reaction, user):
                 user_selections_mapped = {emoji_to_option.get(emoji) for emoji in user_selections}
                 correct_answers_mapped = {emoji_to_option.get(emoji) for emoji in correct_answers}
 
+                # Debug: Print mapped selections and correct answers
+                print(f"User Selections Mapped: {user_selections_mapped}")
+                print(f"Correct Answers Mapped: {correct_answers_mapped}")
+
                 # Validate mapping
                 if None in user_selections_mapped or None in correct_answers_mapped:
-                    await message.channel.send("Error: Invalid emoji detected in reactions.")
+                    await message.channel.send("Error: Invalid emoji detected in reactions or selections.")
                     return
 
                 # Extract user ID from the key
@@ -605,13 +615,13 @@ async def on_reaction_add(reaction, user):
                     awarded_users.append(user_id)
 
             # Notify results
+            correct_answer_text = ", ".join(correct_answers_mapped)
             if awarded_users:
                 awarded_mentions = ", ".join([f"<@{user_id}>" for user_id in awarded_users])
-                correct_answer_text = ", ".join(correct_answers_mapped)
                 await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answer_text}. Users awarded: {awarded_mentions}")
             else:
-                correct_answer_text = ", ".join(correct_answers_mapped)
                 await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answer_text}.")
+
 
 
 @bot.command()
