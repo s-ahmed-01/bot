@@ -537,30 +537,41 @@ async def on_reaction_add(reaction, user):
             )
 
         elif poll_type == "bonus_result":
-            # Evaluate user's answer once they confirm (e.g., a specific emoji or timeout could trigger this)
-            user_selections = bot.user_reactions.get(user_reaction_key, set())
-            cursor.execute('''
-            SELECT answer FROM bonus_questions
-            WHERE id = ?
-            ''', (question_id,))
-            correct_answer_row = cursor.fetchone()
+            # Fetch user responses for this question
+            user_responses = {key: selections for key, selections in bot.user_reactions.items() if key.startswith(f"bonus_{question_id}_")}
 
-            if not correct_answer_row:
-                await message.channel.send("Error: No correct answer found for this bonus question.")
+            if not user_responses:
+                await message.channel.send("Error: No user responses found for this bonus question.")
                 return
 
-            correct_answers = set([correct_answer.strip() for correct_answer in correct_answer_row[0].split(",")])  # Parse correct answers
-            if user_selections == correct_answers:
-                # Award points if the user's selections match exactly
-                cursor.execute('''
-                INSERT INTO leaderboard (user_id, points)
-                VALUES (?, 1)
-                ON CONFLICT(user_id) DO UPDATE SET points = points + 1
-                ''', (user.id,))
-                conn.commit()
-                await message.channel.send(f"✅ {user.mention}, your answer is correct! You've earned 1 point.")
+            # Get the correct answer from the bonus result poll
+            correct_answers = set([reaction.emoji for reaction in message.reactions if reaction.count > 1])  # Emojis reacted to by others
+            if not correct_answers:
+                await message.channel.send("Error: No correct answers provided for this bonus question.")
+                return
+
+            # Iterate through user responses and award points
+            awarded_users = []
+            for user_reaction_key, user_selections in user_responses.items():
+                # Extract user ID from the key
+                user_id = int(user_reaction_key.split("_")[-1])
+
+                if user_selections == correct_answers:
+                    # Award points for matching responses
+                    cursor.execute('''
+                    INSERT INTO leaderboard (user_id, points)
+                    VALUES (?, 1)
+                    ON CONFLICT(user_id) DO UPDATE SET points = points + 1
+                    ''', (user_id,))
+                    conn.commit()
+                    awarded_users.append(user_id)
+
+            # Notify results
+            if awarded_users:
+                awarded_mentions = ", ".join([f"<@{user_id}>" for user_id in awarded_users])
+                await message.channel.send(f"✅ Points awarded! The correct answer was: {', '.join(correct_answers)}. Users awarded: {awarded_mentions}")
             else:
-                await message.channel.send(f"❌ {user.mention}, your answer is incorrect. Correct answers: {', '.join(correct_answers)}")
+                await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {', '.join(correct_answers)}.")
 
 
 @bot.command()
