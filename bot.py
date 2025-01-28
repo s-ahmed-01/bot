@@ -526,6 +526,9 @@ async def on_reaction_add(reaction, user):
             selected_index = reactions.index(str(reaction.emoji))
             selected_option = options[selected_index]
 
+            if selected_index < len(options):
+                selected_option = options[selected_index].strip()
+
             if selected_option in user_selections:
                 user_selections.remove(selected_option)  # Allow toggling reactions
             else:
