@@ -114,9 +114,9 @@ async def on_ready():
 @bot.command()
 async def leaderboard(ctx):
     cursor.execute('''
-    SELECT user_id, points
+    SELECT username, points
     FROM leaderboard
-    GROUP BY user_id
+    GROUP BY username
     ORDER BY points DESC
     ''')
     leaderboard = cursor.fetchall()
