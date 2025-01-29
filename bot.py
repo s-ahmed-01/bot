@@ -114,10 +114,10 @@ async def on_ready():
 @bot.command()
 async def leaderboard(ctx):
     cursor.execute('''
-    SELECT user_id, SUM(points) as total_points
-    FROM predictions
+    SELECT user_id, points
+    FROM leaderboard
     GROUP BY user_id
-    ORDER BY total_points DESC
+    ORDER BY points DESC
     ''')
     leaderboard = cursor.fetchall()
 
@@ -490,6 +490,12 @@ async def on_reaction_add(reaction, user):
                 SET points = ?
                 WHERE id = ?
                 ''', (points, pred_id))
+
+                cursor.execute('''
+                UPDATE leaderboard
+                SET points = ?
+                WHERE user_id = ?
+                ''', (points, user_id))
             conn.commit()
 
             await message.channel.send(
