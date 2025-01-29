@@ -127,7 +127,7 @@ async def leaderboard(ctx):
 
     leaderboard_message = "🏆 **Leaderboard** 🏆\n"
     for rank, (user_id, total_points) in enumerate(leaderboard, start=1):
-        user = await bot.fetch_user(user_id)
+        user = await bot.fetch_user(int(user_id))
         leaderboard_message += f"{rank}. {user.name} - {total_points} points\n"
 
     await ctx.send(leaderboard_message)
