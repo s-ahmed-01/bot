@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS matches (
     team2 TEXT NOT NULL,
     match_type TEXT NOT NULL,
     match_date TEXT NOT NULL,  -- Date of the match
+    match_week INTEGER NOT NULL,
     poll_created BOOLEAN DEFAULT FALSE, -- Track poll creation
     poll_message_id TEXT,
     winner TEXT,
@@ -60,6 +61,7 @@ CREATE TABLE IF NOT EXISTS predictions (
     pred_winner TEXT,
     pred_score TEXT,
     match_id INTEGER,
+    match_week INTEGER NOT NULL,
     points INTEGER DEFAULT 0,
     FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE,
     UNIQUE(user_id, match_id)
@@ -75,6 +77,7 @@ CREATE TABLE IF NOT EXISTS bonus_answers (
     question_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     answer TEXT NOT NULL,
+    points INTEGER DEFAULT 0,
     UNIQUE(question_id, user_id),  -- Ensure one answer per user per question
     FOREIGN KEY (question_id) REFERENCES bonus_questions (id)
 )
@@ -90,7 +93,7 @@ CREATE TABLE IF NOT EXISTS bonus_questions (
     correct_answer TEXT,
     date DATE,
     poll_created BOOLEAN DEFAULT FALSE,
-    points INTEGER DEFAULT 1
+    points INTEGER NOT NULL
 );
 
 ''')
@@ -114,9 +117,9 @@ async def on_ready():
 @bot.command()
 async def leaderboard(ctx):
     cursor.execute('''
-    SELECT username, points
-    FROM leaderboard
-    GROUP BY username
+    SELECT user_id, points
+    FROM predictions
+    GROUP BY user_id, match_week
     ORDER BY points DESC
     ''')
     leaderboard = cursor.fetchall()
@@ -273,7 +276,7 @@ async def create_polls(ctx):
                 await result_channel.send(f"**{formatted_date} Bonus Questions**")
 
             # Create prediction and result polls for the bonus question
-            await create_bonus_poll(prediction_channel, result_channel, question_id, question_text, description, option_split, reactions)
+            await create_bonus_poll(prediction_channel, result_channel, question_id, question_text, description, option_split, reactions, points)
 
         await ctx.send("Polls successfully created for all pending matches and bonus questions.")
 
@@ -320,7 +323,7 @@ async def create_match_poll(prediction_channel, result_channel, match_id, match_
     conn.commit()
 
 
-async def create_bonus_poll(prediction_channel, result_channel, question_id, question_text, description, options, reactions):
+async def create_bonus_poll(prediction_channel, result_channel, question_id, question_text, description, options, reactions, points):
     """
     Helper function to create bonus question polls.
     """
@@ -340,7 +343,7 @@ async def create_bonus_poll(prediction_channel, result_channel, question_id, que
     # Create result poll
     result_embed = discord.Embed(
         title=f"Bonus Question Result: {question_text}",
-        description=description,
+        description=description + (f"Points: {points}"),
         color=discord.Color.orange()
     )
     for i, option in enumerate(options, start=1):
@@ -487,16 +490,10 @@ async def on_reaction_add(reaction, user):
                 # Update points in the predictions table
                 cursor.execute('''
                 UPDATE predictions
-                SET points = ?
+                SET points = points + ?
                 WHERE id = ?
                 ''', (points, pred_id))
 
-                cursor.execute('''
-                UPDATE leaderboard
-                SET points = ?
-                WHERE username = ?
-                ON CONFLICT(user_id) DO UPDATE SET points = points + 1
-                ''', (points, user_id))
             conn.commit()
 
             await message.channel.send(
@@ -506,7 +503,7 @@ async def on_reaction_add(reaction, user):
         # Locate the question in the database
         question_text = title.split(":")[1].strip()  # Extract question text
         cursor.execute('''
-        SELECT id, options FROM bonus_questions
+        SELECT id, options, points FROM bonus_questions
         WHERE question = ?
         ''', (question_text,))
         question_row = cursor.fetchone()
@@ -515,7 +512,7 @@ async def on_reaction_add(reaction, user):
             await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
             return
 
-        question_id, options = question_row
+        question_id, options, points_value = question_row
         option_split = [option.strip() for option in options.split(",")]
         reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
 
@@ -614,10 +611,11 @@ async def on_reaction_add(reaction, user):
                 # Award points if the user's selections match the correct options
                 if user_selections_mapped == correct_answers_mapped:
                     cursor.execute('''
-                    INSERT INTO leaderboard (username, points)
-                    VALUES (?, 1)
-                    ON CONFLICT(user_id) DO UPDATE SET points = points + 1
-                    ''', (user_id,))
+                    UPDATE bonus_answers
+                    SET points = points + ?
+                    WHERE id = ?
+                    ''', (points_value, pred_id))
+                    
                     conn.commit()
                     awarded_users.append(user_id)
 
