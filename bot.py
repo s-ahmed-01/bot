@@ -494,7 +494,8 @@ async def on_reaction_add(reaction, user):
                 cursor.execute('''
                 UPDATE leaderboard
                 SET points = ?
-                WHERE user_id = ?
+                WHERE username = ?
+                ON CONFLICT(user_id) DO UPDATE SET points = points + 1
                 ''', (points, user_id))
             conn.commit()
 
