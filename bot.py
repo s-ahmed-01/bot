@@ -238,7 +238,7 @@ async def create_polls(ctx):
     try:
         # Fetch matches that have not had polls created yet
         cursor.execute('''
-        SELECT id, match_date, match_type, team1, team2
+        SELECT id, match_date, match_type, team1, team2, winner_points, scoreline_points
         FROM matches
         WHERE poll_created = FALSE
         ORDER BY match_date
@@ -247,7 +247,7 @@ async def create_polls(ctx):
 
         # Fetch bonus questions that have not had polls created yet
         cursor.execute('''
-        SELECT id, date, question, description, options
+        SELECT id, date, question, description, options, points
         FROM bonus_questions
         WHERE poll_created = FALSE
         ORDER BY date
@@ -275,7 +275,7 @@ async def create_polls(ctx):
 
         # --- Create polls for matches ---
         for match in matches:
-            match_id, match_date, match_type, team1, team2 = match
+            match_id, match_date, match_type, team1, team2, winner_points, scoreline_points = match
 
             if isinstance(match_date, str):
                 match_date = datetime.strptime(match_date, "%Y-%m-%d").date()
@@ -302,11 +302,11 @@ async def create_polls(ctx):
                 reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']
 
             # Create prediction and result polls for the match
-            await create_match_poll(prediction_channel, result_channel, match_id, match_date, team1, team2, match_type, options, reactions)
+            await create_match_poll(prediction_channel, result_channel, match_id, match_date, team1, team2, match_type, options, reactions, winner_points, scoreline_points)
 
         # --- Create polls for bonus questions ---
         for question in bonus_questions:
-            question_id, match_date, question_text, description, options = question
+            question_id, match_date, question_text, description, options, point_value = question
 
             if isinstance(match_date, str):
                 match_date = datetime.strptime(match_date, "%Y-%m-%d").date()
@@ -322,7 +322,7 @@ async def create_polls(ctx):
                 await result_channel.send(f"**{formatted_date} Bonus Questions**")
 
             # Create prediction and result polls for the bonus question
-            await create_bonus_poll(prediction_channel, result_channel, question_id, question_text, description, option_split, reactions, points)
+            await create_bonus_poll(prediction_channel, result_channel, question_id, question_text, description, option_split, reactions, point_value)
 
         await ctx.send("Polls successfully created for all pending matches and bonus questions.")
 
@@ -330,7 +330,7 @@ async def create_polls(ctx):
         await ctx.send(f"Error creating polls: {e}")
 
 
-async def create_match_poll(prediction_channel, result_channel, match_id, match_date, team1, team2, match_type, options, reactions):
+async def create_match_poll(prediction_channel, result_channel, match_id, match_date, team1, team2, match_type, options, reactions, winner_points, scoreline_points):
     """
     Helper function to create match polls.
     """
