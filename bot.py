@@ -48,7 +48,9 @@ CREATE TABLE IF NOT EXISTS matches (
     poll_created BOOLEAN DEFAULT FALSE, -- Track poll creation
     poll_message_id TEXT,
     winner TEXT,
-    score TEXT
+    score TEXT,
+    winner_points INTEGER,
+    scoreline_points INTEGER
 )
 ''')
 conn.commit()
@@ -75,6 +77,7 @@ cursor.execute('''
 CREATE TABLE IF NOT EXISTS bonus_answers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     question_id INTEGER NOT NULL,
+    match_week INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     answer TEXT NOT NULL,
     points INTEGER DEFAULT 0,
@@ -92,6 +95,7 @@ CREATE TABLE IF NOT EXISTS bonus_questions (
     options TEXT NOT NULL,
     correct_answer TEXT,
     date DATE,
+    match_week INTEGER NOT NULL,
     poll_created BOOLEAN DEFAULT FALSE,
     points INTEGER NOT NULL
 );
@@ -122,7 +126,15 @@ async def leaderboard(ctx):
     GROUP BY user_id, match_week
     ORDER BY points DESC
     ''')
-    leaderboard = cursor.fetchall()
+    match_leaderboard = cursor.fetchall()
+
+    cursor.execute('''
+    SELECT user_id, points
+    FROM bonus_answers
+    GROUP BY user_id, match_week
+    ORDER BY points DESC
+    ''')
+    bonus_leaderboard = cursor.fetchall()
 
     if not leaderboard:
         await ctx.send("No leaderboard data available yet!")
@@ -136,7 +148,7 @@ async def leaderboard(ctx):
     await ctx.send(leaderboard_message)
 
 @bot.command()
-async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str):
+async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str, winner_points: int = None, scoreline_points:int = None):
     """
     Schedule a match with a specific date.
     Args:
@@ -151,17 +163,36 @@ async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str
         current_year = datetime.now().year
         match_date_with_year = parsed_date.replace(year=current_year)
 
-        # Insert into the database with the full date
+        # Determine the match week
+        cursor.execute("SELECT match_date, match_week FROM matches ORDER BY match_date ASC")
+        existing_matches = cursor.fetchall()
+
+        match_week = 1  # Default to week 1 if no matches exist
+
+        if existing_matches:
+            last_match_date, last_match_week = existing_matches[-1]
+            last_match_date = datetime.strptime(last_match_date, "%Y-%m-%d")
+
+            # If new match is within 2 days of the last scheduled match, keep the same week
+            if (match_date_with_year - last_match_date).days <= 2:
+                match_week = last_match_week
+            else:
+                match_week = last_match_week + 1
+
+        # Insert into the database with the full date and calculated match_week
         cursor.execute('''
-        INSERT INTO matches (match_date, match_type, team1, team2)
-        VALUES (?, ?, ?, ?)
-        ''', (match_date_with_year.strftime("%Y-%m-%d"), match_type, team1, team2))
+        INSERT INTO matches (match_date, match_type, team1, team2, match_week, winner_points, scoreline_points)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (match_date_with_year.strftime("%Y-%m-%d"), match_type, team1, team2, match_week, winner_points, scoreline_points))
         conn.commit()
+
+        await ctx.send(f"✅ Match scheduled: {team1} vs {team2} on {match_date_with_year.strftime('%d-%m')} (Week {match_week})")
+
     except ValueError:
-        print("Invalid date format. Please use dd-mm.")
+        await ctx.send("❌ Invalid date format. Please use DD-MM.")
 
 @bot.command()
-async def add_bonus_question(ctx, date: str, question: str, description: str, options: str, points: int):
+async def add_bonus_question(ctx, date: str, question: str, description: str, options: str, points: int = None):
     """
     Adds a bonus question to the database.
     """
@@ -170,10 +201,25 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
         current_year = datetime.now().year
         match_date_with_year = parsed_date.replace(year=current_year)
 
+        cursor.execute("SELECT match_week FROM bonus_questions ORDER BY match_week DESC")
+        existing_matches = cursor.fetchall()
+
+        match_week = 1  # Default to week 1 if no matches exist
+
+        if existing_matches:
+            last_match_date, last_match_week = existing_matches[-1]
+            last_match_date = datetime.strptime(last_match_date, "%Y-%m-%d")
+
+            # If new match is within 2 days of the last scheduled match, keep the same week
+            if (match_date_with_year - last_match_date).days <= 2:
+                match_week = last_match_week
+            else:
+                match_week = last_match_week + 1
+
         cursor.execute('''
-        INSERT INTO bonus_questions (date, question, description, options, points)
+        INSERT INTO bonus_questions (date, question, description, options, points, match_week)
         VALUES (?, ?, ?, ?, ?)
-        ''', (match_date_with_year.strftime("%Y-%m-%d"), question, description, options, points))
+        ''', (match_date_with_year.strftime("%Y-%m-%d"), question, description, options, points, match_week))
         conn.commit()
 
         await ctx.send(f"Bonus question added for {date}: {question}")
@@ -409,7 +455,7 @@ async def on_reaction_add(reaction, user):
 
         # Locate the match in the database
         cursor.execute('''
-        SELECT id FROM matches
+        SELECT id, winner_points, score_points FROM matches
         WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?
         ''', (team1, team2, match_type, match_date))
         match_row = cursor.fetchone()
@@ -481,11 +527,17 @@ async def on_reaction_add(reaction, user):
 
                 # Award points for correct winner
                 if pred_winner == winner:
-                    points += 1 if match_type == "BO1" else (2 if match_type == "BO3" else 3)
+                    if match_row[1] != None:
+                        points += match_row[1] 
+                    else:
+                        points += 1 if match_type == "BO1" else (2 if match_type == "BO3" else 3)
 
                     # Bonus points for correct score
                     if pred_score == score:
-                        points += 1 if match_type == "BO3" else (2 if match_type == "BO5" else 0)
+                        if match_row[2] != None:
+                            points += match_row[2]
+                        else:
+                            points += 1 if match_type == "BO3" else (2 if match_type == "BO5" else 0)
 
                 # Update points in the predictions table
                 cursor.execute('''
