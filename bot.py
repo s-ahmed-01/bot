@@ -201,7 +201,7 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
         current_year = datetime.now().year
         match_date_with_year = parsed_date.replace(year=current_year)
 
-        cursor.execute("SELECT match_week FROM bonus_questions ORDER BY match_week DESC")
+        cursor.execute("SELECT date, match_week FROM bonus_questions ORDER BY match_week DESC")
         existing_matches = cursor.fetchall()
 
         match_week = 1  # Default to week 1 if no matches exist
