@@ -564,7 +564,7 @@ async def on_reaction_add(reaction, user):
             await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
             return
 
-        question_id, options, points_value = question_row
+        question_id, week, options, points_value = question_row
         option_split = [option.strip() for option in options.split(",")]
         reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
 
