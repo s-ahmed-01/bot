@@ -218,7 +218,7 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
 
         cursor.execute('''
         INSERT INTO bonus_questions (date, question, description, options, points, match_week)
-        VALUES (?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?)
         ''', (match_date_with_year.strftime("%Y-%m-%d"), question, description, options, points, match_week))
         conn.commit()
 
@@ -455,7 +455,7 @@ async def on_reaction_add(reaction, user):
 
         # Locate the match in the database
         cursor.execute('''
-        SELECT id, winner_points, score_points FROM matches
+        SELECT id, match_week, winner_points, score_points FROM matches
         WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?
         ''', (team1, team2, match_type, match_date))
         match_row = cursor.fetchone()
@@ -482,12 +482,12 @@ async def on_reaction_add(reaction, user):
 
             # Insert prediction into the database
             cursor.execute('''
-            INSERT INTO predictions (match_id, user_id, pred_winner, pred_score, points)
-            VALUES (?, ?, ?, ?, 0)
+            INSERT INTO predictions (match_id, match_week, user_id, pred_winner, pred_score, points)
+            VALUES (?, ?, ?, ?, ?, 0)
             ON CONFLICT(match_id, user_id) DO UPDATE SET
             pred_winner = excluded.pred_winner,
             pred_score = excluded.pred_score
-            ''', (match_id, user.id, pred_winner, pred_score))
+            ''', (match_id, match_row[1], user.id, pred_winner, pred_score))
             conn.commit()
 
             await message.channel.send(f"{user.mention} your prediction has been logged: {pred_winner} with score {pred_score}.")
@@ -555,7 +555,7 @@ async def on_reaction_add(reaction, user):
         # Locate the question in the database
         question_text = title.split(":")[1].strip()  # Extract question text
         cursor.execute('''
-        SELECT id, options, points FROM bonus_questions
+        SELECT id, match_week, options, points FROM bonus_questions
         WHERE question = ?
         ''', (question_text,))
         question_row = cursor.fetchone()
