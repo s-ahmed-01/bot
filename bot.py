@@ -588,7 +588,12 @@ async def on_reaction_add(reaction, user):
 
             try:
                 # Ensure reactions are aligned with options
-                selected_index = reactions.index(str(reaction.emoji))
+                try:
+                    selected_index = reactions.index(str(reaction.emoji))
+                except ValueError:
+                    await message.channel.send("Error: Invalid reaction. Please select a valid option.")
+                    return
+
                 print(f"Selected index: {selected_index}")  # Log selected index for debugging
                 if selected_index < len(option_split):
                     selected_option = option_split[selected_index].strip()  # Get the correct option string
@@ -596,23 +601,32 @@ async def on_reaction_add(reaction, user):
 
                     # Add or remove from user selections
                     if selected_option in user_selections:
-                        user_selections.remove(reactions[selected_index])  # Remove the emoji
+                        user_selections.remove(selected_option)  # Remove the actual option
                     else:
                         user_selections.add(reactions[selected_index])  # Add the emoji
 
                     # Update the bot's tracked reactions
-                    bot.user_reactions[user_reaction_key] = user_selections
+                    bot.user_reactions[user_reaction_key] = user_selections.copy()
 
                     # Notify the user of their current selections
                     await message.channel.send(
                         f"{user.mention}, your current selections for '{question_text}' are: {', '.join(user_selections)}"
                     )
+
+                    cursor.execute('''
+                    INSERT INTO bonus_answers (user_id, question_id, selected_option)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(user_id, question_id) DO UPDATE SET selected_option = excluded.selected_option
+                    ''', (user_id, question_id, selected_option))
+                    conn.commit()
+
                 else:
                     await message.channel.send("Error: Invalid reaction. Please select a valid option.")
 
             except ValueError:
                 # Handle cases where the emoji is not in the reactions list
                 await message.channel.send("Error: Reaction not recognized. Please react with a valid emoji.")
+                return
 
 
         elif poll_type == "bonus_result":
@@ -623,11 +637,18 @@ async def on_reaction_add(reaction, user):
                 await message.channel.send("Error: No user responses found for this bonus question.")
                 return
 
-            # Get the correct answer emojis from the bonus result poll
-            correct_answers = {reaction.emoji for reaction in message.reactions if reaction.count > 1}
-            if not correct_answers:
-                await message.channel.send("Error: No correct answers provided for this bonus question.")
+            # Fetch the correct answers for this question
+            cursor.execute('''
+            SELECT correct_answers FROM bonus_questions
+            WHERE id = ?
+            ''', (question_id,))
+            correct_answers_row = cursor.fetchone()
+
+            if not correct_answers_row:
+                await message.channel.send("Error: No correct answer stored for this question.")
                 return
+
+            correct_answers = set(correct_answers_row[0].split(","))  # Convert to set for comparison
 
             # Create a mapping of emojis to options
             try:
@@ -644,40 +665,40 @@ async def on_reaction_add(reaction, user):
             # Iterate through user responses and award points
             awarded_users = []
             for user_reaction_key, user_selections in user_responses.items():
-                # Map user selections and correct answers to options
+                # Map user-selected emojis to options
                 user_selections_mapped = {emoji_to_option.get(emoji) for emoji in user_selections}
-                correct_answers_mapped = {emoji_to_option.get(emoji) for emoji in correct_answers}
 
                 # Debug: Print mapped selections and correct answers
                 print(f"User Selections Mapped: {user_selections_mapped}")
-                print(f"Correct Answers Mapped: {correct_answers_mapped}")
+                print(f"Correct Answers: {correct_answers}")
 
-                # Validate mapping
-                if None in user_selections_mapped or None in correct_answers_mapped:
-                    await message.channel.send("Error: Invalid emoji detected in reactions or selections.")
+                # Ensure user selections do not contain None values
+                if None in user_selections_mapped:
+                    await message.channel.send("Error: Invalid reaction detected in user selections.")
                     return
 
                 # Extract user ID from the key
                 user_id = int(user_reaction_key.split("_")[-1])
 
-                # Award points if the user's selections match the correct options
-                if user_selections_mapped == correct_answers_mapped:
+                # Award points only if all correct answers are selected
+                if user_selections_mapped == correct_answers:
                     cursor.execute('''
                     UPDATE bonus_answers
                     SET points = points + ?
-                    WHERE id = ?
-                    ''', (points_value, pred_id))
+                    WHERE user_id = ? AND question_id = ?
+                    ''', (points_value, user_id, question_id))
                     
                     conn.commit()
                     awarded_users.append(user_id)
 
             # Notify results
-            correct_answer_text = ", ".join(correct_answers_mapped)
+            correct_answer_text = ", ".join(correct_answers)
             if awarded_users:
                 awarded_mentions = ", ".join([f"<@{user_id}>" for user_id in awarded_users])
-                await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answer_text}. Users awarded: {awarded_mentions}")
+                await message.channel.send(f"✅ Points awarded! The correct answers were: {correct_answer_text}. Users awarded: {awarded_mentions}")
             else:
-                await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answer_text}.")
+                await message.channel.send(f"❌ No users selected all correct answers. The correct answers were: {correct_answer_text}.")
+
 
 
 
