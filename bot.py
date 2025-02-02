@@ -117,35 +117,44 @@ conn.commit()
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
-# Command: Leaderboard
 @bot.command()
 async def leaderboard(ctx):
     cursor.execute('''
-    SELECT user_id, points
+    SELECT user_id, SUM(points)
     FROM predictions
     GROUP BY user_id, match_week
-    ORDER BY points DESC
+    ORDER BY SUM(points) DESC
     ''')
     match_leaderboard = cursor.fetchall()
 
     cursor.execute('''
-    SELECT user_id, points
+    SELECT user_id, SUM(points)
     FROM bonus_answers
     GROUP BY user_id, match_week
-    ORDER BY points DESC
+    ORDER BY SUM(points) DESC
     ''')
     bonus_leaderboard = cursor.fetchall()
 
-    if not leaderboard:
+    combined_scores = {}
+    for user_id, points in match_leaderboard + bonus_leaderboard:
+        combined_scores[user_id] = combined_scores.get(user_id, 0) + points
+
+    if not combined_scores:
         await ctx.send("No leaderboard data available yet!")
         return
 
     leaderboard_message = "🏆 **Leaderboard** 🏆\n"
-    for rank, (user_id, total_points) in enumerate(leaderboard, start=1):
-        user = await bot.fetch_user(int(user_id))
-        leaderboard_message += f"{rank}. {user.name} - {total_points} points\n"
+    for rank, (user_id, total_points) in enumerate(sorted(combined_scores.items(), key=lambda x: x[1], reverse=True), start=1):
+        try:
+            user = await bot.fetch_user(int(user_id))
+            username = user.name
+        except discord.NotFound:
+            username = f"Unknown User ({user_id})"
+
+        leaderboard_message += f"{rank}. {username} - {total_points} points\n"
 
     await ctx.send(leaderboard_message)
+
 
 @bot.command()
 async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str, winner_points: int = None, scoreline_points:int = None):
@@ -637,9 +646,9 @@ async def on_reaction_add(reaction, user):
                 await message.channel.send("Error: No user responses found for this bonus question.")
                 return
 
-            # Fetch the correct answers for this question
+            # Fetch the correct answers
             cursor.execute('''
-            SELECT correct_answers FROM bonus_questions
+            SELECT correct_answer FROM bonus_questions
             WHERE id = ?
             ''', (question_id,))
             correct_answers_row = cursor.fetchone()
@@ -650,14 +659,10 @@ async def on_reaction_add(reaction, user):
 
             correct_answers = set(correct_answers_row[0].split(","))  # Convert to set for comparison
 
-            # Create a mapping of emojis to options
-            try:
-                emoji_to_option = {reaction.strip(): option.strip() for reaction, option in zip(reactions, option_split)}
-            except Exception as e:
-                await message.channel.send(f"Error while creating emoji-to-option mapping: {str(e)}")
-                return
+            # Mapping of emoji -> option
+            emoji_to_option = {reaction.strip(): option.strip() for reaction, option in zip(reactions, option_split)}
 
-            # Debug: Print emoji-to-option mapping
+            # Debugging
             print(f"Emoji to Option Mapping: {emoji_to_option}")
             print(f"User Responses: {user_responses}")
             print(f"Correct Answers: {correct_answers}")
@@ -665,28 +670,27 @@ async def on_reaction_add(reaction, user):
             # Iterate through user responses and award points
             awarded_users = []
             for user_reaction_key, user_selections in user_responses.items():
-                # Map user-selected emojis to options
+                # Map user selections to text answers
                 user_selections_mapped = {emoji_to_option.get(emoji) for emoji in user_selections}
 
-                # Debug: Print mapped selections and correct answers
+                # Debugging
                 print(f"User Selections Mapped: {user_selections_mapped}")
-                print(f"Correct Answers: {correct_answers}")
 
-                # Ensure user selections do not contain None values
+                # Validate
                 if None in user_selections_mapped:
-                    await message.channel.send("Error: Invalid reaction detected in user selections.")
+                    await message.channel.send("Error: Invalid reaction detected.")
                     return
 
-                # Extract user ID from the key
+                # Extract user ID
                 user_id = int(user_reaction_key.split("_")[-1])
 
-                # Award points only if all correct answers are selected
+                # Award points if all correct answers were selected
                 if user_selections_mapped == correct_answers:
                     cursor.execute('''
-                    UPDATE bonus_answers
-                    SET points = points + ?
-                    WHERE user_id = ? AND question_id = ?
-                    ''', (points_value, user_id, question_id))
+                    INSERT INTO bonus_answers (user_id, question_id, answer, points)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(user_id, question_id) DO UPDATE SET points = points + ?
+                    ''', (user_id, question_id, ",".join(user_selections_mapped), points_value, points_value))
                     
                     conn.commit()
                     awarded_users.append(user_id)
@@ -695,9 +699,9 @@ async def on_reaction_add(reaction, user):
             correct_answer_text = ", ".join(correct_answers)
             if awarded_users:
                 awarded_mentions = ", ".join([f"<@{user_id}>" for user_id in awarded_users])
-                await message.channel.send(f"✅ Points awarded! The correct answers were: {correct_answer_text}. Users awarded: {awarded_mentions}")
+                await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answer_text}. Users awarded: {awarded_mentions}")
             else:
-                await message.channel.send(f"❌ No users selected all correct answers. The correct answers were: {correct_answer_text}.")
+                await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answer_text}.")
 
 
 
