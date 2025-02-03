@@ -464,7 +464,7 @@ async def on_reaction_add(reaction, user):
 
         # Locate the match in the database
         cursor.execute('''
-        SELECT id, match_week, winner_points, score_points FROM matches
+        SELECT id, match_week, winner_points, scoreline_points FROM matches
         WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?
         ''', (team1, team2, match_type, match_date))
         match_row = cursor.fetchone()
@@ -639,6 +639,35 @@ async def on_reaction_add(reaction, user):
 
 
         elif poll_type == "bonus_result":
+            # Get the question ID from the embed
+            question_text = title.split(":")[1].strip()
+            cursor.execute('''
+            SELECT id, correct_answer FROM bonus_questions
+            WHERE question = ?
+            ''', (question_text,))
+            question_row = cursor.fetchone()
+
+            if not question_row:
+                await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
+                return
+
+            question_id, correct_answers_str = question_row
+
+            # If no correct answer is stored, take this reaction as the correct answer and update the database
+            if correct_answers_str is None:
+                correct_answers = {str(reaction.emoji)}  # Store the selected reaction as the correct answer
+                cursor.execute('''
+                UPDATE bonus_questions
+                SET correct_answer = ?
+                WHERE id = ?
+                ''', (",".join(correct_answers), question_id))
+                conn.commit()
+                await message.channel.send(f"✅ The correct answer for '{question_text}' has been recorded.")
+                return  # No need to check responses now, as this is the first time setting the answer
+
+            # If an answer is already stored, proceed with awarding points
+            correct_answers = set(correct_answers_str.split(","))  # Convert stored answer to set
+
             # Fetch user responses for this question
             user_responses = {key: selections for key, selections in bot.user_reactions.items() if key.startswith(f"bonus_{question_id}_")}
 
@@ -646,28 +675,14 @@ async def on_reaction_add(reaction, user):
                 await message.channel.send("Error: No user responses found for this bonus question.")
                 return
 
-            # Fetch the correct answers
-            cursor.execute('''
-            SELECT correct_answer FROM bonus_questions
-            WHERE id = ?
-            ''', (question_id,))
-            correct_answers_row = cursor.fetchone()
-
-            if not correct_answers_row:
-                await message.channel.send("Error: No correct answer stored for this question.")
-                return
-
-            correct_answers = set(correct_answers_row[0].split(","))  # Convert to set for comparison
-
-            # Mapping of emoji -> option
-            emoji_to_option = {reaction.strip(): option.strip() for reaction, option in zip(reactions, option_split)}
+            # Map emoji reactions to their corresponding options
+            emoji_to_option = {reaction: option for reaction, option in zip(reactions, option_split)}
 
             # Debugging
+            print(f"Correct Answers: {correct_answers}")
             print(f"Emoji to Option Mapping: {emoji_to_option}")
             print(f"User Responses: {user_responses}")
-            print(f"Correct Answers: {correct_answers}")
 
-            # Iterate through user responses and award points
             awarded_users = []
             for user_reaction_key, user_selections in user_responses.items():
                 # Map user selections to text answers
