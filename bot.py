@@ -626,7 +626,7 @@ async def on_reaction_add(reaction, user):
                     INSERT INTO bonus_answers (user_id, question_id, selected_option)
                     VALUES (?, ?, ?)
                     ON CONFLICT(user_id, question_id) DO UPDATE SET selected_option = excluded.selected_option
-                    ''', (user_id, question_id, selected_option))
+                    ''', (user.id, question_id, selected_option))
                     conn.commit()
 
                 else:
