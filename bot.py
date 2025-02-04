@@ -430,7 +430,7 @@ async def on_reaction_add(reaction, user):
 
     embed = message.embeds[0]  # Get the first embed
     title = embed.title  # Embed title (e.g., "Match Poll: TSM vs FTX (BO5)")
-    description = message.content.strip()  # Message content for match date
+    description = embed.description  # Message content for match date
 
     # Parse poll type and match details from the title
     if "Match Poll" in title:
@@ -457,7 +457,10 @@ async def on_reaction_add(reaction, user):
 
         # Extract match date (if needed, fallback to current date)
         try:
-            match_date = description if description else datetime.now().date().isoformat()
+            if description:
+                match_date = description.group(1)  # Extracted date in YYYY-MM-DD format
+            else:
+                match_date = datetime.now().date().isoformat()  # Fallback to current date if no match found
         except Exception:
             await message.channel.send("Error parsing match date.")
             return
