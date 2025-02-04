@@ -451,6 +451,7 @@ async def on_reaction_add(reaction, user):
             teams, match_type = match_details.rsplit("(", 1)
             team1, team2 = [team.strip() for team in teams.split("vs")]
             match_type = match_type.strip(")")
+            datestring = re.search(r"Match Date:\s*(\d{4}-\d{2}-\d{2})", description)
         except ValueError:
             await message.channel.send("Error parsing match details from poll.")
             return
@@ -458,7 +459,7 @@ async def on_reaction_add(reaction, user):
         # Extract match date (if needed, fallback to current date)
         try:
             if description:
-                match_date = description.group(1)  # Extracted date in YYYY-MM-DD format
+                match_date = datestring.group(1)  # Extracted date in YYYY-MM-DD format
             else:
                 match_date = datetime.now().date().isoformat()  # Fallback to current date if no match found
         except Exception:
@@ -626,9 +627,9 @@ async def on_reaction_add(reaction, user):
                     )
 
                     cursor.execute('''
-                    INSERT INTO bonus_answers (user_id, question_id, selected_option)
+                    INSERT INTO bonus_answers (user_id, question_id, answer)
                     VALUES (?, ?, ?)
-                    ON CONFLICT(user_id, question_id) DO UPDATE SET selected_option = excluded.selected_option
+                    ON CONFLICT(user_id, question_id) DO UPDATE SET answer = excluded.selected_option
                     ''', (user.id, question_id, selected_option))
                     conn.commit()
 
