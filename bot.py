@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime, timedelta
 import pytz
+import re
 
 # Load environment variables
 load_dotenv()
