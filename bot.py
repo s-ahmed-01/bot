@@ -50,8 +50,8 @@ CREATE TABLE IF NOT EXISTS matches (
     poll_message_id TEXT,
     winner TEXT,
     score TEXT,
-    winner_points INTEGER,
-    scoreline_points INTEGER
+    winner_points INTEGER DEFAULT 0,
+    scoreline_points INTEGER DEFAULT 0
 )
 ''')
 conn.commit()
@@ -479,6 +479,9 @@ async def on_reaction_add(reaction, user):
             return
 
         match_id = match_row[0]  # Match ID in the database
+        scoreline_points = match_row[3]
+        winner_points = match_row[2]
+
 
         # Determine which action to take based on poll type
         if poll_type == "match_poll":
@@ -541,15 +544,15 @@ async def on_reaction_add(reaction, user):
 
                 # Award points for correct winner
                 if pred_winner == winner:
-                    if match_row[1] != None:
-                        points += match_row[1] 
+                    if match_row[2] != 0:
+                        points += match_row[2] 
                     else:
                         points += 1 if match_type == "BO1" else (2 if match_type == "BO3" else 3)
 
                     # Bonus points for correct score
                     if pred_score == score:
-                        if match_row[2] != None:
-                            points += match_row[2]
+                        if match_row[3] != 0:
+                            points += match_row[3]
                         else:
                             points += 1 if match_type == "BO3" else (2 if match_type == "BO5" else 0)
 
