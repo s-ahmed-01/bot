@@ -113,48 +113,73 @@ CREATE TABLE IF NOT EXISTS leaderboard (
 ''')
 conn.commit()
 
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS users (
+    user_id INTEGER PRIMARY KEY,
+    username TEXT NOT NULL
+)
+''')
+conn.commit()
+
 # Event: Bot ready
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
-@bot.command()
-async def leaderboard(ctx):
-    cursor.execute('''
-    SELECT user_id, SUM(points)
-    FROM predictions
-    GROUP BY user_id, match_week
-    ORDER BY SUM(points) DESC
-    ''')
-    match_leaderboard = cursor.fetchall()
+@bot.event
+async def update_leaderboard():
+    """
+    Updates the leaderboard message in a dedicated channel.
+    """
+    try:
+        leaderboard_channel_id = 1336468081563930674  # Replace with your actual channel ID
+        leaderboard_channel = bot.get_channel(leaderboard_channel_id)
 
-    cursor.execute('''
-    SELECT user_id, SUM(points)
-    FROM bonus_answers
-    GROUP BY user_id, match_week
-    ORDER BY SUM(points) DESC
-    ''')
-    bonus_leaderboard = cursor.fetchall()
+        if not leaderboard_channel:
+            print("Error: Leaderboard channel not found.")
+            return
 
-    combined_scores = {}
-    for user_id, points in match_leaderboard + bonus_leaderboard:
-        combined_scores[user_id] = combined_scores.get(user_id, 0) + points
+        # Fetch leaderboard data: user_id, username, match_week, and total points
+        cursor.execute('''
+        SELECT p.user_id, u.username, p.match_week, SUM(p.points) 
+        FROM predictions p
+        JOIN users u ON p.user_id = u.user_id
+        GROUP BY p.user_id, p.match_week
+        ORDER BY SUM(p.points) DESC, p.match_week ASC
+        ''')
+        leaderboard_data = cursor.fetchall()
 
-    if not combined_scores:
-        await ctx.send("No leaderboard data available yet!")
-        return
+        if not leaderboard_data:
+            leaderboard_message = "**🏆 Leaderboard 🏆**\n\nNo points have been awarded yet!"
+        else:
+            leaderboard_dict = {}
+            for user_id, username, match_week, points in leaderboard_data:
+                if username not in leaderboard_dict:
+                    leaderboard_dict[username] = {"weeks": {}, "total": 0}
+                leaderboard_dict[username]["weeks"][match_week] = points
+                leaderboard_dict[username]["total"] += points
 
-    leaderboard_message = "🏆 **Leaderboard** 🏆\n"
-    for rank, (user_id, total_points) in enumerate(sorted(combined_scores.items(), key=lambda x: x[1], reverse=True), start=1):
-        try:
-            user = await bot.fetch_user(int(user_id))
-            username = user.name
-        except discord.NotFound:
-            username = f"Unknown User ({user_id})"
+            # Format the leaderboard message
+            leaderboard_message = "**🏆 Leaderboard 🏆**\n\n"
+            for rank, (username, data) in enumerate(
+                sorted(leaderboard_dict.items(), key=lambda x: x[1]["total"], reverse=True), start=1
+            ):
+                week_scores = " | ".join(f"Week {week}: {points}" for week, points in sorted(data["weeks"].items()))
+                leaderboard_message += f"{rank}. **{username}** - {week_scores} | **Total: {data['total']}**\n"
 
-        leaderboard_message += f"{rank}. {username} - {total_points} points\n"
+        # Fetch the most recent leaderboard message
+        async for message in leaderboard_channel.history(limit=5):
+            if message.author == bot.user:
+                await message.edit(content=leaderboard_message)
+                return
 
-    await ctx.send(leaderboard_message)
+        # If no previous leaderboard message found, send a new one
+        await leaderboard_channel.send(leaderboard_message)
+
+    except Exception as e:
+        print(f"Error updating leaderboard: {e}")
+
+
 
 
 @bot.command()
@@ -507,6 +532,14 @@ async def on_reaction_add(reaction, user):
             ''', (match_id, match_row[1], user.id, pred_winner, pred_score))
             conn.commit()
 
+            cursor.execute('''
+            INSERT INTO users (user_id, username)
+            VALUES (?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET username = excluded.username
+            ''', (user.id, str(user.name)))  # Stores the current username
+            conn.commit()
+
+
             await message.channel.send(f"{user.mention} your prediction has been logged: {pred_winner} with score {pred_score}.")
 
         elif poll_type == "result_poll":
@@ -564,6 +597,8 @@ async def on_reaction_add(reaction, user):
                 ''', (points, pred_id))
 
             conn.commit()
+
+            await update_leaderboard()
 
             await message.channel.send(
                 f"Result recorded for match {team1} vs {team2} ({match_type}): {winner} wins with score {score}! Points have been awarded."
@@ -639,6 +674,16 @@ async def on_reaction_add(reaction, user):
 
                 else:
                     await message.channel.send("Error: Invalid reaction. Please select a valid option.")
+                
+                cursor.execute('''
+                INSERT INTO users (user_id, username)
+                VALUES (?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET username = excluded.username
+                ''', (user.id, str(user.name)))  # Stores the current username
+                conn.commit()
+
+
+                await update_leaderboard()
 
             except ValueError:
                 # Handle cases where the emoji is not in the reactions list
@@ -716,6 +761,7 @@ async def on_reaction_add(reaction, user):
                     ''', (user_id, question_id, ",".join(user_selections_mapped), points_value, points_value))
                     
                     conn.commit()
+                    await update_leaderboard()
                     awarded_users.append(user_id)
 
             # Notify results
@@ -725,6 +771,8 @@ async def on_reaction_add(reaction, user):
                 await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answer_text}. Users awarded: {awarded_mentions}")
             else:
                 await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answer_text}.")
+
+            
 
 
 
