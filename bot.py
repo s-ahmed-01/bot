@@ -8,6 +8,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from datetime import datetime, timedelta
 import pytz
 import re
+import json
 
 # Load environment variables
 load_dotenv()
@@ -94,6 +95,7 @@ CREATE TABLE IF NOT EXISTS bonus_questions (
     question TEXT NOT NULL,
     description TEXT NOT NULL,
     options TEXT NOT NULL,
+    required_answers INTEGER NOT NULL,
     correct_answer TEXT,
     date DATE,
     match_week INTEGER NOT NULL,
@@ -227,7 +229,7 @@ async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str
         await ctx.send("❌ Invalid date format. Please use DD-MM.")
 
 @bot.command()
-async def add_bonus_question(ctx, date: str, question: str, description: str, options: str, points: int = None):
+async def add_bonus_question(ctx, date: str, question: str, description: str, options: str, required_answers: int = 1, points: int = None):
     """
     Adds a bonus question to the database.
     """
@@ -252,9 +254,9 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
                 match_week = last_match_week + 1
 
         cursor.execute('''
-        INSERT INTO bonus_questions (date, question, description, options, points, match_week)
-        VALUES (?, ?, ?, ?, ?, ?)
-        ''', (match_date_with_year.strftime("%Y-%m-%d"), question, description, options, points, match_week))
+        INSERT INTO bonus_questions (date, question, description, options, required_answers, points, match_week)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (match_date_with_year.strftime("%Y-%m-%d"), question, description, options, required_answers, points, match_week))
         conn.commit()
 
         await ctx.send(f"Bonus question added for {date}: {question}")
@@ -646,34 +648,32 @@ async def on_reaction_add(reaction, user):
                     await message.channel.send("Error: Invalid reaction. Please select a valid option.")
                     return
 
-                print(f"Selected index: {selected_index}")  # Log selected index for debugging
-                if selected_index < len(option_split):
-                    selected_option = option_split[selected_index].strip()  # Get the correct option string
-                    print(f"Selected option: {selected_option}")  # Log selected option for debugging
+                # Fetch existing answers
+                cursor.execute('''
+                SELECT answer FROM bonus_answers WHERE user_id = ? AND question_id = ?
+                ''', (user.id, question_id))
+                existing_answer_row = cursor.fetchone()
 
-                    # Add or remove from user selections
-                    if selected_option in user_selections:
-                        user_selections.remove(selected_option)  # Remove the actual option
-                    else:
-                        user_selections.add(reactions[selected_index])  # Add the emoji
-
-                    # Update the bot's tracked reactions
-                    bot.user_reactions[user_reaction_key] = user_selections.copy()
-
-                    # Notify the user of their current selections
-                    await message.channel.send(
-                        f"{user.mention}, your current selections for '{question_text}' are: {', '.join(user_selections)}"
-                    )
-
-                    cursor.execute('''
-                    INSERT INTO bonus_answers (user_id, question_id, answer)
-                    VALUES (?, ?, ?)
-                    ON CONFLICT(user_id, question_id) DO UPDATE SET answer = excluded.answer
-                    ''', (user.id, question_id, selected_option))
-                    conn.commit()
-
+                if existing_answer_row and existing_answer_row[0]:
+                    existing_answers = json.loads(existing_answer_row[0])
                 else:
-                    await message.channel.send("Error: Invalid reaction. Please select a valid option.")
+                    existing_answers = []
+
+                # Map emoji to actual option
+                selected_index = reactions.index(str(reaction.emoji))
+                selected_option = option_split[selected_index]
+
+                if selected_option not in existing_answers:
+                    existing_answers.append(selected_option)  # Add selection
+
+                updated_answers = json.dumps(existing_answers)
+
+                cursor.execute('''
+                INSERT INTO bonus_answers (user_id, question_id, answer)
+                VALUES (?, ?, ?)
+                ON CONFLICT(user_id, question_id) DO UPDATE SET answer = excluded.answer
+                ''', (user.id, question_id, updated_answers))
+                conn.commit()
                 
                 cursor.execute('''
                 INSERT INTO users (user_id, username)
@@ -772,7 +772,99 @@ async def on_reaction_add(reaction, user):
             else:
                 await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answer_text}.")
 
-            
+@bot.event
+async def on_reaction_remove(reaction, user):
+    if user.bot:
+        return  # Ignore bot reactions
+
+    message = reaction.message
+    if not message.embeds:
+        return
+
+    embed = message.embeds[0]
+    title = embed.title
+
+    if "Bonus Question" in title:
+        question_text = title.split(":")[1].strip()
+
+        cursor.execute('''
+        SELECT id, options FROM bonus_questions
+        WHERE question = ?
+        ''', (question_text,))
+        question_row = cursor.fetchone()
+
+        if not question_row:
+            return
+
+        question_id, options = question_row
+        option_split = [option.strip() for option in options.split(",")]
+        reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
+
+        if str(reaction.emoji) not in reactions:
+            return
+
+        # Fetch existing answers
+        cursor.execute('''
+        SELECT answer FROM bonus_answers WHERE user_id = ? AND question_id = ?
+        ''', (user.id, question_id))
+        existing_answer_row = cursor.fetchone()
+
+        if existing_answer_row and existing_answer_row[0]:
+            existing_answers = json.loads(existing_answer_row[0])
+        else:
+            return  # Nothing to remove
+
+        # Map emoji to actual option
+        selected_index = reactions.index(str(reaction.emoji))
+        selected_option = option_split[selected_index]
+
+        if selected_option in existing_answers:
+            existing_answers.remove(selected_option)  # Remove selection
+
+        updated_answers = json.dumps(existing_answers)
+
+        # Update the database
+        cursor.execute('''
+        UPDATE bonus_answers
+        SET answer = ?
+        WHERE user_id = ? AND question_id = ?
+        ''', (updated_answers, user.id, question_id))
+        conn.commit()
+    
+    elif poll_type == "match_poll":
+        try:
+            match_details = title.split(":")[1].strip()  # Extract teams and match type
+            teams, match_type = match_details.rsplit("(", 1)
+            team1, team2 = [team.strip() for team in teams.split("vs")]
+            match_type = match_type.strip(")")
+
+            # Extract Match Date
+            match_date_line = embed.description.split("\n")[0]  # "Match Date: YYYY-MM-DD"
+            match_date = match_date_line.replace("Match Date: ", "").strip()
+
+            # Locate Match in DB
+            cursor.execute('''
+            SELECT id FROM matches
+            WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?
+            ''', (team1, team2, match_type, match_date))
+            match_row = cursor.fetchone()
+
+            if not match_row:
+                return  # No match found, nothing to remove
+
+            match_id = match_row[0]
+
+            # Delete Prediction from Database
+            cursor.execute('''
+            DELETE FROM predictions WHERE match_id = ? AND user_id = ?
+            ''', (match_id, user.id))
+            conn.commit()
+
+            await message.channel.send(f"{user.mention}, your prediction has been removed.")
+
+        except Exception as e:
+            print(f"Error removing match prediction: {e}")
+    
 
 
 
