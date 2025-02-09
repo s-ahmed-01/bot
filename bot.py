@@ -609,7 +609,7 @@ async def on_reaction_add(reaction, user):
         # Locate the question in the database
         question_text = title.split(":")[1].strip()  # Extract question text
         cursor.execute('''
-        SELECT id, match_week, options, points FROM bonus_questions
+        SELECT id, match_week, options, points, correct_answer FROM bonus_questions
         WHERE question = ?
         ''', (question_text,))
         question_row = cursor.fetchone()
@@ -626,9 +626,6 @@ async def on_reaction_add(reaction, user):
             await message.channel.send("Invalid reaction. Please select a valid option.")
             return
 
-        # --- Handle user reactions ---
-        # --- Handle user reactions ---
-        user_reaction_key = f"bonus_{question_id}_{user.id}"  # Unique key for this question and user
         if poll_type == "bonus_poll":
             # Track the user's selected reactions
             if not hasattr(bot, "user_reactions"):
@@ -692,80 +689,59 @@ async def on_reaction_add(reaction, user):
 
 
         elif poll_type == "bonus_result":
-            # Get the question ID from the embed
-            question_text = title.split(":")[1].strip()
-            cursor.execute('''
-            SELECT id, correct_answer FROM bonus_questions
-            WHERE question = ?
-            ''', (question_text,))
-            question_row = cursor.fetchone()
-
             if not question_row:
                 await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
                 return
 
-            question_id, correct_answers_str = question_row
+            if question_row and question_row[3]:
+                correct_answers = set(json.loads(question_row[4]))
+            else:
+                correct_answers = set()
 
-            # If no correct answer is stored, take this reaction as the correct answer and update the database
-            if correct_answers_str is None:
-                correct_answers = {str(reaction.emoji)}  # Store the selected reaction as the correct answer
-                cursor.execute('''
-                UPDATE bonus_questions
-                SET correct_answer = ?
-                WHERE id = ?
-                ''', (",".join(correct_answers), question_id))
-                conn.commit()
-                await message.channel.send(f"✅ The correct answer for '{question_text}' has been recorded.")
-                return  # No need to check responses now, as this is the first time setting the answer
+            user_input = dict(zip(reactions, option_split)).get(str(reaction.emoji), None)
 
-            # If an answer is already stored, proceed with awarding points
-            correct_answers = set(correct_answers_str.split(","))  # Convert stored answer to set
+            correct_answers.append(user_input)  # Add selection
+
+            correct_answers_json = json.dumps(correct_answers)
+
+            cursor.execute('''
+            UPDATE bonus_questions
+            SET correct_answer = ?
+            WHERE id = ?
+            ''', (correct_answers_json, question_id))
+            conn.commit()
+            await message.channel.send(f"✅ The correct answer for '{question_text}' has been recorded.")
+            return  # No need to check responses now, as this is the first time setting the answer
 
             # Fetch user responses for this question
-            user_responses = {key: selections for key, selections in bot.user_reactions.items() if key.startswith(f"bonus_{question_id}_")}
+            cursor.execute('''
+            SELECT user_id, answer FROM bonus_answers
+            WHERE question_id = ?
+            ''', (question_id,))
+            user_responses = cursor.fetchall()
 
             if not user_responses:
                 await message.channel.send("Error: No user responses found for this bonus question.")
                 return
 
-            # Map emoji reactions to their corresponding options
-            emoji_to_option = {reaction: option for reaction, option in zip(reactions, option_split)}
-
-            # Debugging
-            print(f"Correct Answers: {correct_answers}")
-            print(f"Emoji to Option Mapping: {emoji_to_option}")
-            print(f"User Responses: {user_responses}")
-
             awarded_users = []
-            for user_reaction_key, user_selections in user_responses.items():
+            for user_id, user_selections_json in user_responses:
                 # Map user selections to text answers
-                user_selections_mapped = {emoji_to_option.get(emoji) for emoji in user_selections}
-
-                # Debugging
-                print(f"User Selections Mapped: {user_selections_mapped}")
-
-                # Validate
-                if None in user_selections_mapped:
-                    await message.channel.send("Error: Invalid reaction detected.")
-                    return
-
-                # Extract user ID
-                user_id = int(user_reaction_key.split("_")[-1])
+                user_selections = set(json.loads(user_answers_json))
 
                 # Award points if all correct answers were selected
-                if user_selections_mapped == correct_answers:
+                if user_selections == correct_answers:
                     cursor.execute('''
-                    INSERT INTO bonus_answers (user_id, question_id, answer, points)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(user_id, question_id) DO UPDATE SET points = points + ?
-                    ''', (user_id, question_id, ",".join(user_selections_mapped), points_value, points_value))
+                    UPDATE bonus_answers
+                    SET points = ?
+                    WHERE question_id = ? AND user_id = ?
+                    ''', (points_value, question_id, user_id))
+                    conn.commit()
                     
                     conn.commit()
                     await update_leaderboard()
                     awarded_users.append(user_id)
 
-            # Notify results
-            correct_answer_text = ", ".join(correct_answers)
             if awarded_users:
                 awarded_mentions = ", ".join([f"<@{user_id}>" for user_id in awarded_users])
                 await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answer_text}. Users awarded: {awarded_mentions}")
