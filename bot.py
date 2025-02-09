@@ -669,10 +669,10 @@ async def on_reaction_add(reaction, user):
                 updated_answers = json.dumps(existing_answers)
 
                 cursor.execute('''
-                INSERT INTO bonus_answers (user_id, question_id, answer)
-                VALUES (?, ?, ?)
+                INSERT INTO bonus_answers (user_id, question_id, answer, match_week)
+                VALUES (?, ?, ?, ?)
                 ON CONFLICT(user_id, question_id) DO UPDATE SET answer = excluded.answer
-                ''', (user.id, question_id, updated_answers))
+                ''', (user.id, question_id, updated_answers, question_row[1]))
                 conn.commit()
                 
                 cursor.execute('''
