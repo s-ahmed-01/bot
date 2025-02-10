@@ -697,7 +697,7 @@ async def on_reaction_add(reaction, user):
                 await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
                 return
 
-            if question_row and question_row[3]:
+            if answer_row and answer_row[0]:
                 correct_answers = set(json.loads(answer_row[0]))
             else:
                 correct_answers = set()
