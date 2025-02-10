@@ -708,7 +708,7 @@ async def on_reaction_add(reaction, user):
 
             user_input = dict(zip(reactions, option_split)).get(str(reaction.emoji), None)
 
-            correct_answers.append(user_input)  # Add selection
+            correct_answers.add(user_input)  # Add selection
 
             correct_answers_json = json.dumps(correct_answers)
 
