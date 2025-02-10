@@ -710,7 +710,7 @@ async def on_reaction_add(reaction, user):
 
             correct_answers.add(user_input)  # Add selection
 
-            correct_answers_json = json.dumps(correct_answers)
+            correct_answers_json = json.dumps(list(correct_answers))
 
             cursor.execute('''
             UPDATE bonus_questions
