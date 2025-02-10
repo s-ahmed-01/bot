@@ -143,11 +143,13 @@ async def update_leaderboard():
 
         # Fetch leaderboard data: user_id, username, match_week, and total points
         cursor.execute('''
-        SELECT p.user_id, u.username, p.match_week, SUM(p.points) 
-        FROM predictions p
-        JOIN users u ON p.user_id = u.user_id
+        SELECT p.user_id, u.username, p.match_week, 
+               COALESCE(SUM(p.points), 0) + COALESCE(SUM(b.points), 0) AS total_points
+        FROM users u
+        LEFT JOIN predictions p ON u.user_id = p.user_id
+        LEFT JOIN bonus_answers b ON u.user_id = b.user_id AND p.match_week = b.match_week
         GROUP BY p.user_id, p.match_week
-        ORDER BY SUM(p.points) DESC, p.match_week ASC
+        ORDER BY total_points DESC, p.match_week ASC
         ''')
         leaderboard_data = cursor.fetchall()
 
@@ -609,7 +611,7 @@ async def on_reaction_add(reaction, user):
         # Locate the question in the database
         question_text = title.split(":")[1].strip()  # Extract question text
         cursor.execute('''
-        SELECT id, match_week, options, points FROM bonus_questions
+        SELECT id, match_week, options, required_answers points FROM bonus_questions
         WHERE question = ?
         ''', (question_text,))
         question_row = cursor.fetchone()
@@ -618,7 +620,7 @@ async def on_reaction_add(reaction, user):
             await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
             return
 
-        question_id, week, options, points_value = question_row
+        question_id, week, options, required_answers, points_value = question_row
         option_split = [option.strip() for option in options.split(",")]
         reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
 
@@ -627,10 +629,6 @@ async def on_reaction_add(reaction, user):
             return
 
         if poll_type == "bonus_poll":
-            # Track the user's selected reactions
-            if not hasattr(bot, "user_reactions"):
-                bot.user_reactions = {}
-
             # Log reactions and options to debug
             print(f"Reactions: {reactions}")
             print(f"Options: {options}")
@@ -653,32 +651,32 @@ async def on_reaction_add(reaction, user):
                     existing_answers = json.loads(existing_answer_row[0])
                 else:
                     existing_answers = []
+                if len(existing_answers) < required_answers:
+                    # Map emoji to actual option
+                    selected_index = reactions.index(str(reaction.emoji))
+                    selected_option = option_split[selected_index]
 
-                # Map emoji to actual option
-                selected_index = reactions.index(str(reaction.emoji))
-                selected_option = option_split[selected_index]
+                    if selected_option not in existing_answers:
+                        existing_answers.append(selected_option)  # Add selection
 
-                if selected_option not in existing_answers:
-                    existing_answers.append(selected_option)  # Add selection
+                    updated_answers = json.dumps(existing_answers)
 
-                updated_answers = json.dumps(existing_answers)
-
-                cursor.execute('''
-                INSERT INTO bonus_answers (user_id, question_id, answer, match_week)
-                VALUES (?, ?, ?, ?)
-                ON CONFLICT(user_id, question_id) DO UPDATE SET answer = excluded.answer
-                ''', (user.id, question_id, updated_answers, question_row[1]))
-                conn.commit()
-                
-                cursor.execute('''
-                INSERT INTO users (user_id, username)
-                VALUES (?, ?)
-                ON CONFLICT(user_id) DO UPDATE SET username = excluded.username
-                ''', (user.id, str(user.name)))  # Stores the current username
-                conn.commit()
-
-
-                await update_leaderboard()
+                    cursor.execute('''
+                    INSERT INTO bonus_answers (user_id, question_id, answer, match_week)
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(user_id, question_id) DO UPDATE SET answer = excluded.answer
+                    ''', (user.id, question_id, updated_answers, question_row[1]))
+                    conn.commit()
+                    
+                    cursor.execute('''
+                    INSERT INTO users (user_id, username)
+                    VALUES (?, ?)
+                    ON CONFLICT(user_id) DO UPDATE SET username = excluded.username
+                    ''', (user.id, str(user.name)))  # Stores the current username
+                    conn.commit()
+                else:
+                    await message.channel.send("You have already selected an answer. Please remove one first if you wish to change your answer.")
+                    return
 
             except ValueError:
                 # Handle cases where the emoji is not in the reactions list
@@ -840,9 +838,12 @@ async def on_reaction_remove(reaction, user):
 
             # Delete Prediction from Database
             cursor.execute('''
-            DELETE FROM predictions WHERE match_id = ? AND user_id = ?
+            UPDATE predictions 
+            SET pred_winner = NULL, pred_score = NULL
+            WHERE match_id = ? AND user_id = ?
             ''', (match_id, user.id))
             conn.commit()
+
 
             await message.channel.send(f"{user.mention}, your prediction has been removed.")
 
