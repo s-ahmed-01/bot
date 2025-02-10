@@ -698,7 +698,7 @@ async def on_reaction_add(reaction, user):
                 return
 
             if question_row and question_row[3]:
-                correct_answers = set(json.loads(answer_row))
+                correct_answers = set(json.loads(answer_row[0]))
             else:
                 correct_answers = set()
 
