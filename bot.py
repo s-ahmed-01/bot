@@ -631,8 +631,6 @@ async def on_reaction_add(reaction, user):
             if not hasattr(bot, "user_reactions"):
                 bot.user_reactions = {}
 
-            user_selections = bot.user_reactions.get(user_reaction_key, set())
-
             # Log reactions and options to debug
             print(f"Reactions: {reactions}")
             print(f"Options: {options}")
