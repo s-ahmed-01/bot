@@ -687,11 +687,11 @@ async def on_reaction_add(reaction, user):
 
 
         elif poll_type == "bonus_result":
-                    cursor.execute('''
-                    SELECT correct_answer FROM bonus_questions
-                    WHERE question = ?
-                    ''', (question_text,))
-                    answer_row = cursor.fetchone()
+            cursor.execute('''
+            SELECT correct_answer FROM bonus_questions
+            WHERE question = ?
+            ''', (question_text,))
+            answer_row = cursor.fetchone()
             
             if not question_row:
                 await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
