@@ -687,12 +687,18 @@ async def on_reaction_add(reaction, user):
 
 
         elif poll_type == "bonus_result":
+                    cursor.execute('''
+                    SELECT correct_answer FROM bonus_questions
+                    WHERE question = ?
+                    ''', (question_text,))
+                    answer_row = cursor.fetchone()
+            
             if not question_row:
                 await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
                 return
 
             if question_row and question_row[3]:
-                correct_answers = set(json.loads(question_row[4]))
+                correct_answers = set(json.loads(answer_row))
             else:
                 correct_answers = set()
 
