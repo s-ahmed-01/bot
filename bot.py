@@ -697,10 +697,14 @@ async def on_reaction_add(reaction, user):
                 await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
                 return
 
-            if answer_row and answer_row[0]:
-                correct_answers = set(json.loads(answer_row[0]))
+            if answer_row and answer_row[0]:  # Ensure it is not None or empty
+                try:
+                    correct_answers = set(json.loads(answer_row[0]))  # Parse stored JSON
+                except json.JSONDecodeError:
+                    print(f"Error parsing JSON from DB: {answer_row[0]}")  # Debugging
+                    correct_answers = set()
             else:
-                correct_answers = set()
+                correct_answers = set()  # Initialize as empty if no value is stored
 
             user_input = dict(zip(reactions, option_split)).get(str(reaction.emoji), None)
 
