@@ -611,7 +611,7 @@ async def on_reaction_add(reaction, user):
         # Locate the question in the database
         question_text = title.split(":")[1].strip()  # Extract question text
         cursor.execute('''
-        SELECT id, match_week, options, required_answers points FROM bonus_questions
+        SELECT id, match_week, options, required_answers, points FROM bonus_questions
         WHERE question = ?
         ''', (question_text,))
         question_row = cursor.fetchone()
