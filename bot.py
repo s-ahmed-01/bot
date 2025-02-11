@@ -717,7 +717,6 @@ async def on_reaction_add(reaction, user):
             ''', (correct_answers_json, question_id))
             conn.commit()
             await message.channel.send(f"✅ The correct answer for '{question_text}' has been recorded.")
-            return  # No need to check responses now, as this is the first time setting the answer
 
             # Fetch user responses for this question
             cursor.execute('''
@@ -744,15 +743,16 @@ async def on_reaction_add(reaction, user):
                     ''', (points_value, question_id, user_id))
                     conn.commit()
                     
-                    conn.commit()
                     await update_leaderboard()
                     awarded_users.append(user_id)
 
             if awarded_users:
                 awarded_mentions = ", ".join([f"<@{user_id}>" for user_id in awarded_users])
                 await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answer_text}. Users awarded: {awarded_mentions}")
+                return
             else:
                 await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answer_text}.")
+                return
 
 @bot.event
 async def on_reaction_remove(reaction, user):
