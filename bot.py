@@ -647,10 +647,14 @@ async def on_reaction_add(reaction, user):
                 ''', (user.id, question_id))
                 existing_answer_row = cursor.fetchone()
 
-                if existing_answer_row and existing_answer_row[0]:
-                    existing_answers = json.loads(existing_answer_row[0])
+                if existing_answer_row is None or existing_answer_row[0] in [None, ""]:
+                    existing_answers = []  # New entry, initialize empty list
                 else:
-                    existing_answers = []
+                    try:
+                        existing_answers = json.loads(existing_answer_row[0])  # Load previous answers
+                    except json.JSONDecodeError:
+                        existing_answers = []  # If decoding fails, start fresh
+
                 if len(existing_answers) < required_answers:
                     # Map emoji to actual option
                     selected_index = reactions.index(str(reaction.emoji))
