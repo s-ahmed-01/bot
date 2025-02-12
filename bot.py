@@ -646,6 +646,7 @@ async def on_reaction_add(reaction, user):
                 SELECT answer FROM bonus_answers WHERE user_id = ? AND question_id = ?
                 ''', (user.id, question_id))
                 existing_answer_row = cursor.fetchone()
+                print(existing_answer_row)
 
                 if existing_answer_row is None or existing_answer_row[0] in [None, ""]:
                     existing_answers = []  # New entry, initialize empty list
@@ -736,7 +737,7 @@ async def on_reaction_add(reaction, user):
             awarded_users = []
             for user_id, user_selections_json in user_responses:
                 # Map user selections to text answers
-                user_selections = set(json.loads(user_answers_json))
+                user_selections = set(json.loads(user_selections_json))
 
                 # Award points if all correct answers were selected
                 if user_selections == correct_answers:
