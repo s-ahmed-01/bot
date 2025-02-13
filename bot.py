@@ -759,7 +759,7 @@ async def on_reaction_add(reaction, user):
 
             if awarded_users:
                 awarded_mentions = ", ".join([f"<@{user_id}>" for user_id in awarded_users])
-                await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answer_text}. Users awarded: {awarded_mentions}")
+                await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answers}. Users awarded: {awarded_mentions}")
                 return
             else:
                 await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answers}.")
@@ -816,7 +816,7 @@ async def on_reaction_remove(reaction, user):
         if selected_option in existing_answers:
             print("i got here :)")
             existing_answers.remove(selected_option)
-            await message.channel.send(f"{selected_answer} has been removed from your selection.")
+            await message.channel.send(f"{selected_option} has been removed from your selection.")
             print(existing_answers)  # Remove selection
 
         updated_answers = json.dumps(existing_answers)
