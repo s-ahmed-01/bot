@@ -717,53 +717,67 @@ async def on_reaction_add(reaction, user):
 
             user_input = dict(zip(reactions, option_split)).get(str(reaction.emoji), None)
 
-            correct_answers.add(user_input)  # Add selection
+            if user_input:
+                correct_answers.add(user_input)  # Add selection
 
-            correct_answers_json = json.dumps(list(correct_answers))
-
-            cursor.execute('''
-            UPDATE bonus_questions
-            SET correct_answer = ?
-            WHERE id = ?
-            ''', (correct_answers_json, question_id))
-            conn.commit()
-            await message.channel.send(f"✅ The correct answer for '{question_text}' has been recorded.")
-
-            # Fetch user responses for this question
-            cursor.execute('''
-            SELECT user_id, answer FROM bonus_answers
-            WHERE question_id = ?
-            ''', (question_id,))
-            user_responses = cursor.fetchall()
-
-            if not user_responses:
-                await message.channel.send("Error: No user responses found for this bonus question.")
+                correct_answers_json = json.dumps(list(correct_answers))
+                cursor.execute('''
+                UPDATE bonus_questions
+                SET correct_answer = ?
+                WHERE id = ?
+                ''', (correct_answers_json, question_id))
+                conn.commit()
+                await message.channel.send(f"✅ The correct answer for '{question_text}' has been recorded.")
                 return
 
-            awarded_users = []
-            for user_id, user_selections_json in user_responses:
-                # Map user selections to text answers
-                user_selections = set(json.loads(user_selections_json))
+            if str(reaction.emoji) == "✅":  # Change this emoji to whatever you prefer
+                await message.channel.send(f"✅ Correct answer selection finalized! Checking responses...")
 
-                # Award points if all correct answers were selected
-                if user_selections == correct_answers:
+                # Fetch user responses
+                cursor.execute('''
+                SELECT user_id, answer FROM bonus_answers
+                WHERE question_id = ?
+                ''', (question_id,))
+                user_responses = cursor.fetchall()
+
+                if not user_responses:
+                    await message.channel.send("Error: No user responses found for this bonus question.")
+                    return
+
+                awarded_users = []
+                for user_id, user_selections_json in user_responses:
+                    user_selections = set(json.loads(user_selections_json))  # Convert user answers
+
+                    if len(correct_answers) > required_answers:
+                        # If only one answer is expected, allow any one correct answer
+                        if user_selections.issubset(correct_answers):  # Intersection (checks if at least one is correct)
+                            points_awarded = points_value  # Full points for selecting at least one
+                        else:
+                            points_awarded = 0  # No points if none were correct
+                    else:
+                        # Default behavior: Require an exact match of all correct answers
+                        points_awarded = points_value if user_selections == correct_answers else 0
+
+                    # Award points
                     cursor.execute('''
                     UPDATE bonus_answers
                     SET points = ?
                     WHERE question_id = ? AND user_id = ?
-                    ''', (points_value, question_id, user_id))
+                    ''', (points_awarded, question_id, user_id))
                     conn.commit()
-                    
-                    await update_leaderboard()
-                    awarded_users.append(user_id)
 
-            if awarded_users:
-                awarded_mentions = ", ".join([f"<@{user_id}>" for user_id in awarded_users])
-                await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answers}. Users awarded: {awarded_mentions}")
-                return
-            else:
-                await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answers}.")
-                return
+                    if points_awarded > 0:
+                        awarded_users.append(user_id)
+
+                # --- **Send Final Result Message** ---
+                correct_answer_text = ", ".join(correct_answers)
+                if awarded_users:
+                    awarded_mentions = ", ".join([f"<@{user_id}>" for user_id in awarded_users])
+                    await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answer_text}. Users awarded: {awarded_mentions}")
+                else:
+                    await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answer_text}.")
+
+                await update_leaderboard()
 
 @bot.event
 async def on_reaction_remove(reaction, user):
