@@ -658,6 +658,7 @@ async def on_reaction_add(reaction, user):
                 else:
                     existing_answers = []  # First-time user, initialize empty list
 
+                print(existing_answers)
 
                 if len(existing_answers) < required_answers:
                     # Map emoji to actual option
@@ -666,6 +667,7 @@ async def on_reaction_add(reaction, user):
 
                     if selected_option not in existing_answers:
                         existing_answers.append(selected_option)  # Add selection
+
 
                     updated_answers = json.dumps(existing_answers)
 
@@ -759,7 +761,7 @@ async def on_reaction_add(reaction, user):
                 await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answer_text}. Users awarded: {awarded_mentions}")
                 return
             else:
-                await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answer_text}.")
+                await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answers}.")
                 return
 
 @bot.event
