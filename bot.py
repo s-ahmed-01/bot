@@ -766,6 +766,7 @@ async def on_reaction_add(reaction, user):
 
 @bot.event
 async def on_reaction_remove(reaction, user):
+    print("hi")
     if user.bot:
         return  # Ignore bot reactions
 
