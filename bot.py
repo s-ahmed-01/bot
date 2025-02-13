@@ -811,7 +811,10 @@ async def on_reaction_remove(reaction, user):
         selected_option = option_split[selected_index]
 
         if selected_option in existing_answers:
-            existing_answers.remove(selected_option)  # Remove selection
+            print("i got here :)")
+            existing_answers.remove(selected_option)
+            await message.channel.send(f"{selected_answer} has been removed from your selection.")
+            print(existing_answers)  # Remove selection
 
         updated_answers = json.dumps(existing_answers)
 
