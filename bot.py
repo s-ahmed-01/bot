@@ -803,6 +803,7 @@ async def on_reaction_remove(reaction, user):
 
         if existing_answer_row and existing_answer_row[0]:
             existing_answers = json.loads(existing_answer_row[0])
+            print(existing_answers)
         else:
             return  # Nothing to remove
 
