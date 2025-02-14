@@ -614,6 +614,7 @@ async def on_reaction_add(reaction, user):
         cursor.execute('''
         SELECT id, match_week, options, required_answers, points FROM bonus_questions
         WHERE question = ?
+        ORDER BY id DESC LIMIT 1
         ''', (question_text,))
         question_row = cursor.fetchone()
 
@@ -699,6 +700,7 @@ async def on_reaction_add(reaction, user):
             cursor.execute('''
             SELECT correct_answer FROM bonus_questions
             WHERE question = ?
+            ORDER BY id DESC LIMIT 1
             ''', (question_text,))
             answer_row = cursor.fetchone()
             
