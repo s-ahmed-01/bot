@@ -124,6 +124,8 @@ CREATE TABLE IF NOT EXISTS users (
 ''')
 conn.commit()
 
+announcement_channel = 1339790130478841906
+
 # Event: Bot ready
 @bot.event
 async def on_ready():
@@ -1098,6 +1100,50 @@ async def schedule_poll_deletion(ctx, match_date: str):
 
     except Exception as e:
         await ctx.send(f"Error scheduling poll deletion: {e}")
+
+@bot.command()
+@commands.has_permissions(manage_channels=True)
+async def announce(ctx, source_channel: discord.TextChannel, announcement_channel: discord.TextChannel, poll_channel: discord.TextChannel):
+    """Takes the last message from source_channel, posts it in announcement_channel, and closes poll_channel."""
+    try:
+        # Fetch the last message from the source channel
+        async for message in source_channel.history(limit=1):
+            last_message = message
+            break  # Get the first (latest) message
+        else:
+            await ctx.send("⚠ No messages found in the source channel.")
+            return
+
+        # Send the last message to the announcement channel
+        embed = discord.Embed(description=last_message.content, color=discord.Color.green())
+        embed.set_author(name=last_message.author.display_name, icon_url=last_message.author.avatar.url)
+        await announcement_channel.send(embed=embed)
+
+        # Close (make poll channel private)
+        overwrite = poll_channel.overwrites_for(ctx.guild.default_role)
+        overwrite.read_messages = True  # Remove @everyone access
+        await poll_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
+
+        await ctx.send(f"📢 Announcement sent in {announcement_channel.mention}, and {poll_channel.mention} is now **closed**!")
+
+    except Exception as e:
+        await ctx.send(f"❌ Error: {e}")
+
+@bot.command()
+@commands.has_permissions(manage_channels=True)
+async def close_channel(ctx, channel: discord.TextChannel):
+    """Makes the channel private and sends a closing message."""
+    try:
+        # Make the channel private
+        overwrite = channel.overwrites_for(ctx.guild.default_role)
+        overwrite.read_messages = False  # Remove @everyone access
+        await channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
+
+        await ctx.send(f"🔒 {channel.mention} is now **private**.")
+
+    except Exception as e:
+        await ctx.send(f"❌ Error: {e}")
+
 
 # Run bot
 bot.run(TOKEN)
