@@ -1172,12 +1172,12 @@ async def schedule_poll_deletion(ctx, match_date: str):
 @commands.has_permissions(manage_channels=True)
 async def announce(ctx):
     """Takes the last message from source_channel, posts it in announcement_channel, and closes poll_channel."""
-        poll_channel_id = 1275834751697027213  # Replace with actual channel IDs        
-        poll_channel = bot.get_channel(poll_channel_id)
-        source_channel_id = 1340087493135175794
-        source_channel = bot.get_channel(dump_channel_id)
-        announcement_channel_id = 1339790130478841906
-        announcement_channel = bot.get_channel(announcement_channel_id)
+    poll_channel_id = 1275834751697027213  # Replace with actual channel IDs        
+    poll_channel = bot.get_channel(poll_channel_id)
+    source_channel_id = 1340087493135175794
+    source_channel = bot.get_channel(dump_channel_id)
+    announcement_channel_id = 1339790130478841906
+    announcement_channel = bot.get_channel(announcement_channel_id)
 
     try:
         # Fetch the last message from the source channel
