@@ -190,7 +190,7 @@ async def update_leaderboard():
 
 
 @bot.command()
-async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str, winner_points: int = None, scoreline_points:int = None):
+async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str, winner_points: int = 0, scoreline_points:int = 0):
     """
     Schedule a match with a specific date.
     Args:
@@ -234,7 +234,7 @@ async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str
         await ctx.send("❌ Invalid date format. Please use DD-MM.")
 
 @bot.command()
-async def add_bonus_question(ctx, date: str, question: str, description: str, options: str, required_answers: int = 1, points: int = None):
+async def add_bonus_question(ctx, date: str, question: str, description: str, options: str, required_answers: int = 1, points: int = 1):
     """
     Adds a bonus question to the database.
     """
@@ -931,46 +931,75 @@ async def predictions(ctx):
             FROM matches
             WHERE match_date >= CURRENT_DATE
             ORDER BY match_date
+            LIMIT 3
         ''')
         upcoming_dates = [row[0] for row in cursor.fetchall()]
 
         if not upcoming_dates:
-            await ctx.send("There are no upcoming matches in the schedule.")
+            await ctx.send("There are no upcoming matches or bonus questions in the schedule.")
             return
 
         # Fetch all matches for those dates, with LEFT JOIN to include missing predictions
         cursor.execute('''
-            SELECT matches.match_date, matches.team1, matches.team2, matches.match_type, predictions.pred_winner, predictions.pred_score, predictions.points
+            SELECT matches.match_date, matches.team1, matches.team2, matches.match_type, 
+                   predictions.pred_winner, predictions.pred_score, predictions.points
             FROM matches
             LEFT JOIN predictions 
                 ON matches.id = predictions.match_id AND predictions.user_id = ?
             WHERE matches.match_date IN ({})
             ORDER BY matches.match_date, matches.id
         '''.format(','.join(['?'] * len(upcoming_dates))), (user_id, *upcoming_dates))
-        matches = cursor.fetchall()
+        match_predictions = cursor.fetchall()
 
-        if not matches:
-            await ctx.send("There are no matches to display.")
+        # Fetch all bonus questions for those dates, with LEFT JOIN to include missing answers
+        cursor.execute('''
+            SELECT bonus_questions.date, bonus_questions.question, bonus_answers.answer, bonus_answers.points
+            FROM bonus_questions
+            LEFT JOIN bonus_answers
+                ON bonus_questions.id = bonus_answers.question_id AND bonus_answers.user_id = ?
+            WHERE bonus_questions.date IN ({})
+            ORDER BY bonus_questions.date, bonus_questions.id
+        '''.format(','.join(['?'] * len(upcoming_dates))), (user_id, *upcoming_dates))
+        bonus_predictions = cursor.fetchall()
+
+        if not match_predictions and not bonus_predictions:
+            await ctx.send("There are no upcoming matches or bonus questions to display.")
             return
 
-        # Prepare a confirmation message
+        # Prepare the embed
         embed = discord.Embed(
-            title="Your Predictions for Upcoming Matches",
+            title="Your Predictions for Upcoming Matches and Bonus Questions",
             description="Here are the predictions you have made (or need to make) for the next scheduled days.",
             color=discord.Color.blue()
         )
 
-        for match_date, team1, team2, match_type, pred_winner, pred_score, points in matches:
-            if pred_winner:
-                prediction_text = f"{pred_winner} {pred_score} (Points: {points if points else 0})"
-            else:
-                prediction_text = "No prediction made."
+        # Add match predictions
+        if match_predictions:
+            for match_date, team1, team2, match_type, pred_winner, pred_score, points in match_predictions:
+                if pred_winner:
+                    prediction_text = f"{pred_winner} {pred_score} (Points: {points if points else 0})"
+                else:
+                    prediction_text = "No prediction made."
 
-            embed.add_field(
-                name=f"{team1} vs {team2} ({match_type}) - {match_date}",
-                value=prediction_text,
-                inline=False
-            )
+                embed.add_field(
+                    name=f"⚽ {team1} vs {team2} ({match_type}) - {match_date}",
+                    value=prediction_text,
+                    inline=False
+                )
+
+        # Add bonus question predictions
+        if bonus_predictions:
+            for date, question, answer, points in bonus_predictions:
+                if answer:
+                    answer_text = f"{answer} (Points: {points if points else 0})"
+                else:
+                    answer_text = "No response given."
+
+                embed.add_field(
+                    name=f"❓ {question} - {date}",
+                    value=answer_text,
+                    inline=False
+                )
 
         await ctx.send(embed=embed)
 
@@ -984,11 +1013,14 @@ async def reset_leaderboard(ctx):
     Reset the leaderboard and clear all points.
     """
     # Clear leaderboard data
-    cursor.execute('DELETE FROM leaderboard')
+    cursor.execute('DELETE * FROM leaderboard')
     conn.commit()
 
     # Reset points in predictions table
-    cursor.execute('UPDATE predictions SET points = 0')
+    cursor.execute('DELETE * FROM predictions')
+    conn.commit()
+
+    cursor.execute('DELETE * FROM bonus_answers')
     conn.commit()
 
     await ctx.send("Leaderboard has been reset, and all points have been cleared!")
@@ -996,58 +1028,91 @@ async def reset_leaderboard(ctx):
 @bot.command()
 async def voting_summary(ctx, match_date: str):
     """
-    Display voting statistics for matches on a specific date.
+    Display voting statistics for matches and bonus questions on a specific date.
     Args:
         match_date: Date of the matches in DD-MM format.
     """
     try:
         # Convert provided date to match format (YYYY-MM-DD)
-        match_date = datetime.strptime(match_date, "%d-%m")      
+        match_date_obj = datetime.strptime(match_date, "%d-%m")      
         current_year = datetime.now().year
-        match_date_with_year = match_date.replace(year=current_year).strftime("%Y-%m-%d")
+        match_date_with_year = match_date_obj.replace(year=current_year).strftime("%Y-%m-%d")
 
-        # Fetch matches on the specified date
+        summary_message = f"**📊 Voting Summary for {match_date_with_year}**\n"
+
+        # ---- MATCH VOTING SUMMARY ----
         cursor.execute('''
         SELECT id, team1, team2, match_type
         FROM matches
         WHERE match_date = ?
-        ''', (match_date_with_year,))  # Match the date part (DD-MM)
+        ''', (match_date_with_year,))
         matches = cursor.fetchall()
 
-        if not matches:
-            await ctx.send(f"No matches found for {match_date_with_year}!")
-            return
+        if matches:
+            for match_id, team1, team2, match_type in matches:
+                cursor.execute('''
+                SELECT pred_winner, pred_score, COUNT(*) AS votes
+                FROM predictions
+                WHERE match_id = ?
+                GROUP BY pred_winner, pred_score
+                ORDER BY votes DESC
+                ''', (match_id,))
+                vote_data = cursor.fetchall()
 
-        summary_message = f"**Voting Summary for {match_date_with_year}**\n"
-        for match_id, team1, team2, match_type in matches:
-            # Count votes for each option
-            cursor.execute('''
-            SELECT pred_winner, pred_score, COUNT(*) AS votes
-            FROM predictions
-            WHERE match_id = ?
-            GROUP BY pred_winner, pred_score
-            ORDER BY votes DESC
-            ''', (match_id,))
-            vote_data = cursor.fetchall()
+                # Append match summary
+                summary_message += f"\n⚽ **Match:** {team1} vs {team2} ({match_type.upper()})\n"
+                if vote_data:
+                    for pred_winner, pred_score, votes in vote_data:
+                        summary_message += f" - {pred_winner} {pred_score}: {votes} vote(s)\n"
+                else:
+                    summary_message += "   No votes recorded for this match.\n"
+        else:
+            summary_message += "\n⚠ No matches found for this date.\n"
 
-            # Append match summary
-            summary_message += f"\n**Match:** {team1} vs {team2} ({match_type.upper()}) - {match_date_with_year}\n"
-            if vote_data:
-                for pred_winner, pred_score, votes in vote_data:
-                    summary_message += f" - {pred_winner} {pred_score}: {votes} vote(s)\n"
-            else:
-                summary_message += "No votes recorded for this match.\n"
+        # ---- BONUS QUESTION VOTING SUMMARY ----
+        cursor.execute('''
+        SELECT id, question, options
+        FROM bonus_questions
+        WHERE date = ?
+        ''', (match_date_with_year,))
+        bonus_questions = cursor.fetchall()
+
+        if bonus_questions:
+            for question_id, question, options in bonus_questions:
+                # Count votes for each bonus option
+                cursor.execute('''
+                SELECT answer, COUNT(*) AS votes
+                FROM bonus_answers
+                WHERE question_id = ?
+                GROUP BY answer
+                ORDER BY votes DESC
+                ''', (question_id,))
+                bonus_vote_data = cursor.fetchall()
+
+                summary_message += f"\n❓ **Bonus Question:** {question}\n"
+                if bonus_vote_data:
+                    for answer, votes in bonus_vote_data:
+                        summary_message += f" - {answer}: {votes} vote(s)\n"
+                else:
+                    summary_message += "   No responses recorded for this question.\n"
+        else:
+            summary_message += "\n⚠ No bonus questions found for this date.\n"
 
         await ctx.send(summary_message)
 
     except ValueError:
-        await ctx.send("Invalid date format! Please use DD-MM.")
+        await ctx.send("❌ Invalid date format! Please use DD-MM.")
+
 
 
 @bot.command()
-async def delete_match(ctx, match_id: str):
+async def delete_match(ctx, team1: str, team2: str, match_type: str, match_date: str):
     try:
-        cursor.execute('DELETE FROM matches WHERE id = ?', (match_id,))
+        match_date = datetime.strptime(match_date, "%d-%m")      
+        current_year = datetime.now().year
+        match_date_with_year = match_date.replace(year=current_year).strftime("%Y-%m-%d")
+        
+        cursor.execute('DELETE FROM matches WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?', (team1, team2, match_type, match_date_with_year))
         conn.commit()
         await ctx.send(f"Match has been deleted.")
     except ValueError:
@@ -1059,6 +1124,9 @@ async def delete_polls(match_date: str):
     Args:
         match_date: The match date in YYYY-MM-DD format.
     """
+    match_date = datetime.strptime(match_date, "%d-%m")      
+    current_year = datetime.now().year
+    match_date_with_year = match_date.replace(year=current_year).strftime("%Y-%m-%d")
     try:
         # Fetch the channel IDs where the polls are located
         poll_channel_id = 1275834751697027213  # Replace with actual channel IDs        
@@ -1069,11 +1137,10 @@ async def delete_polls(match_date: str):
 
         # Fetch all messages from the channel
         async for message in channel.history(limit=200):  # Adjust the limit if needed
-            if (
-                message.author == bot.user
-                and message.embeds
-            ):
-                await message.delete()
+            if message.author == bot.user and message.embeds:
+                embed = message.embeds[0]  # Get the first embed
+                if embed.description and match_date_with_year in embed.description:
+                    await message.delete()
 
         print(f"All polls for {match_date} have been successfully deleted.")
 
@@ -1103,8 +1170,15 @@ async def schedule_poll_deletion(ctx, match_date: str):
 
 @bot.command()
 @commands.has_permissions(manage_channels=True)
-async def announce(ctx, source_channel: discord.TextChannel, announcement_channel: discord.TextChannel, poll_channel: discord.TextChannel):
+async def announce(ctx):
     """Takes the last message from source_channel, posts it in announcement_channel, and closes poll_channel."""
+        poll_channel_id = 1275834751697027213  # Replace with actual channel IDs        
+        poll_channel = bot.get_channel(poll_channel_id)
+        source_channel_id = 1340087493135175794
+        source_channel = bot.get_channel(dump_channel_id)
+        announcement_channel_id = 1339790130478841906
+        announcement_channel = bot.get_channel(announcement_channel_id)
+
     try:
         # Fetch the last message from the source channel
         async for message in source_channel.history(limit=1):
@@ -1131,15 +1205,18 @@ async def announce(ctx, source_channel: discord.TextChannel, announcement_channe
 
 @bot.command()
 @commands.has_permissions(manage_channels=True)
-async def close_channel(ctx, channel: discord.TextChannel):
+async def close_channel(ctx):
     """Makes the channel private and sends a closing message."""
+    poll_channel_id = 1275834751697027213  # Replace with actual channel IDs        
+    poll_channel = bot.get_channel(poll_channel_id)
+
     try:
         # Make the channel private
-        overwrite = channel.overwrites_for(ctx.guild.default_role)
+        overwrite = poll_channel.overwrites_for(ctx.guild.default_role)
         overwrite.read_messages = False  # Remove @everyone access
         await channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
 
-        await ctx.send(f"🔒 {channel.mention} is now **private**.")
+        await ctx.send(f"🔒 {poll_channel.mention} is now **private**.")
 
     except Exception as e:
         await ctx.send(f"❌ Error: {e}")
