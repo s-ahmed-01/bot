@@ -198,6 +198,7 @@ async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str
         match_type: Type of match ('bo1', 'bo3', or 'bo5').
         team1: Name of the first team.
         team2: Name of the second team.
+        winner/scoreline points: optional, will default to appropriate points if no value given
     """
     try:
         # Validate and parse match_date
@@ -225,7 +226,7 @@ async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str
         cursor.execute('''
         INSERT INTO matches (match_date, match_type, team1, team2, match_week, winner_points, scoreline_points)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (match_date_with_year.strftime("%Y-%m-%d"), match_type, team1, team2, match_week, winner_points, scoreline_points))
+        ''', (match_date_with_year.strftime("%Y-%m-%d"), match_type.upper(), team1, team2, match_week, winner_points, scoreline_points))
         conn.commit()
 
         await ctx.send(f"✅ Match scheduled: {team1} vs {team2} on {match_date_with_year.strftime('%d-%m')} (Week {match_week})")
@@ -237,6 +238,8 @@ async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str
 async def add_bonus_question(ctx, date: str, question: str, description: str, options: str, required_answers: int = 1, points: int = 1):
     """
     Adds a bonus question to the database.
+    Requires:
+    Date in DD-MM format, the question (w/ quotation marks), any description (w/ quotation marks), options (list surrounded by quotation marks), required answers (will default to 1 if no value), points (default value 1)
     """
     try:
         parsed_date = datetime.strptime(date, "%d-%m")
@@ -272,10 +275,7 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
 @bot.command()
 async def create_polls(ctx):
     """
-    Creates prediction polls in Channel A and result polls in Channel B for:
-    1. Matches with poll_created = False.
-    2. Bonus questions with poll_created = False.
-    Adds date headers to split matches and questions by day for better navigation.
+    Creates prediction polls in a public channel and result polls in some mod channel type thing.
     """
     try:
         # Fetch matches that have not had polls created yet
@@ -922,6 +922,9 @@ async def matches(ctx):
 
 @bot.command()
 async def predictions(ctx):
+    """
+    Shows a user's predictions for the upcoming week.
+    """
     try:
         user_id = ctx.author.id
 
@@ -1107,6 +1110,9 @@ async def voting_summary(ctx, match_date: str):
 
 @bot.command()
 async def delete_match(ctx, team1: str, team2: str, match_type: str, match_date: str):
+    """
+    Deletes a match (think UB permutations that don't happen)
+    """
     try:
         match_date = datetime.strptime(match_date, "%d-%m")      
         current_year = datetime.now().year
@@ -1122,7 +1128,7 @@ async def delete_polls(match_date: str):
     """
     Deletes all polls associated with the specified match_date.
     Args:
-        match_date: The match date in YYYY-MM-DD format.
+        match_date: The match date in dd-mm format.
     """
     match_date = datetime.strptime(match_date, "%d-%m")      
     current_year = datetime.now().year
@@ -1151,8 +1157,8 @@ async def delete_polls(match_date: str):
 @bot.command()
 async def schedule_poll_deletion(ctx, match_date: str):
     """
-    Schedules the deletion of polls for the given match_date at 4 PM UK time.
-    match_date format: YYYY-MM-DD
+    Schedules the deletion of polls for the given match_date at 5 PM UK time.
+    match_date format: dd-mm
     """
     try:
         # Convert match_date to datetime
@@ -1171,7 +1177,7 @@ async def schedule_poll_deletion(ctx, match_date: str):
 @bot.command()
 @commands.has_permissions(manage_channels=True)
 async def announce(ctx):
-    """Takes the last message from source_channel, posts it in announcement_channel, and closes poll_channel."""
+    """Takes the last message from the source channel, posts it in the announcement channel, and closes the poll channel."""
     poll_channel_id = 1275834751697027213  # Replace with actual channel IDs        
     poll_channel = bot.get_channel(poll_channel_id)
     source_channel_id = 1340087493135175794
@@ -1206,7 +1212,7 @@ async def announce(ctx):
 @bot.command()
 @commands.has_permissions(manage_channels=True)
 async def close_channel(ctx):
-    """Makes the channel private and sends a closing message."""
+    """Makes the poll channel private."""
     poll_channel_id = 1275834751697027213  # Replace with actual channel IDs        
     poll_channel = bot.get_channel(poll_channel_id)
 
@@ -1214,7 +1220,7 @@ async def close_channel(ctx):
         # Make the channel private
         overwrite = poll_channel.overwrites_for(ctx.guild.default_role)
         overwrite.read_messages = False  # Remove @everyone access
-        await channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
+        await poll_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
 
         await ctx.send(f"🔒 {poll_channel.mention} is now **private**.")
 
