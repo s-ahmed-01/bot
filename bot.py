@@ -981,7 +981,7 @@ async def predictions(ctx):
 
         # Prepare the embed
         embed = discord.Embed(
-            title="Your Predictions for Upcoming Matches and Bonus Questions",
+            title="f<@{user_id}>, your Predictions for Upcoming Matches and Bonus Questions",
             description="Here are the predictions you have made (or need to make) for the next scheduled days.",
             color=discord.Color.blue()
         )
