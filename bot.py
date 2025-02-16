@@ -126,6 +126,10 @@ conn.commit()
 
 announcement_channel = 1339790130478841906
 
+def is_mod_channel(ctx):
+    allowed_channel = 1330957256505692325  # Replace with actual channel IDs
+    return ctx.channel.id == allowed_channel
+
 # Event: Bot ready
 @bot.event
 async def on_ready():
@@ -190,6 +194,7 @@ async def update_leaderboard():
 
 
 @bot.command()
+@commands.check(is_mod_channel)
 async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str, winner_points: int = 0, scoreline_points:int = 0):
     """
     Schedule a match with a specific date.
@@ -235,6 +240,7 @@ async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str
         await ctx.send("❌ Invalid date format. Please use DD-MM.")
 
 @bot.command()
+@commands.check(is_mod_channel)
 async def add_bonus_question(ctx, date: str, question: str, description: str, options: str, required_answers: int = 1, points: int = 1):
     """
     Adds a bonus question to the database.
@@ -273,6 +279,7 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
 
 
 @bot.command()
+@commands.check(is_mod_channel)
 async def create_polls(ctx):
     """
     Creates prediction polls in a public channel and result polls in some mod channel type thing.
@@ -889,6 +896,7 @@ async def on_reaction_remove(reaction, user):
 
 
 @bot.command()
+@commands.check(is_mod_channel)
 async def matches(ctx):
     """
     Display all matches currently in the database.
@@ -925,6 +933,8 @@ async def predictions(ctx):
     """
     Shows a user's predictions for the upcoming week.
     """
+    bot_channel_id = 1340519161453084783
+    bot_channel = bot.get_channel(bot_channel_id)
     try:
         user_id = ctx.author.id
 
@@ -966,7 +976,7 @@ async def predictions(ctx):
         bonus_predictions = cursor.fetchall()
 
         if not match_predictions and not bonus_predictions:
-            await ctx.send("There are no upcoming matches or bonus questions to display.")
+            await bot_channel.send("There are no upcoming matches or bonus questions to display.")
             return
 
         # Prepare the embed
@@ -985,7 +995,7 @@ async def predictions(ctx):
                     prediction_text = "No prediction made."
 
                 embed.add_field(
-                    name=f"⚽ {team1} vs {team2} ({match_type}) - {match_date}",
+                    name=f"{team1} vs {team2} ({match_type}) - {match_date}",
                     value=prediction_text,
                     inline=False
                 )
@@ -1004,13 +1014,14 @@ async def predictions(ctx):
                     inline=False
                 )
 
-        await ctx.send(embed=embed)
+        await bot_channel.send(embed=embed)
 
     except Exception as e:
-        await ctx.send(f"An error occurred while fetching your predictions: {e}")
+        await bot_channel.send(f"An error occurred while fetching your predictions: {e}")
 
 
 @bot.command()
+@commands.check(is_mod_channel)
 async def reset_leaderboard(ctx):
     """
     Reset the leaderboard and clear all points.
@@ -1029,6 +1040,7 @@ async def reset_leaderboard(ctx):
     await ctx.send("Leaderboard has been reset, and all points have been cleared!")
 
 @bot.command()
+@commands.check(is_mod_channel)
 async def voting_summary(ctx, match_date: str):
     """
     Display voting statistics for matches and bonus questions on a specific date.
@@ -1109,9 +1121,10 @@ async def voting_summary(ctx, match_date: str):
 
 
 @bot.command()
+@commands.check(is_mod_channel)
 async def delete_match(ctx, team1: str, team2: str, match_type: str, match_date: str):
     """
-    Deletes a match (think UB permutations that don't happen)
+    Deletes a match (think UB permutations that don't happen) and all associated votes
     """
     try:
         match_date = datetime.strptime(match_date, "%d-%m")      
@@ -1155,6 +1168,7 @@ async def delete_polls(match_date: str):
 
 
 @bot.command()
+@commands.check(is_mod_channel)
 async def schedule_poll_deletion(ctx, match_date: str):
     """
     Schedules the deletion of polls for the given match_date at 5 PM UK time.
@@ -1176,6 +1190,7 @@ async def schedule_poll_deletion(ctx, match_date: str):
 
 @bot.command()
 @commands.has_permissions(manage_channels=True)
+@commands.check(is_mod_channel)
 async def announce(ctx):
     """Takes the last message from the source channel, posts it in the announcement channel, and closes the poll channel."""
     poll_channel_id = 1275834751697027213  # Replace with actual channel IDs        
@@ -1211,6 +1226,7 @@ async def announce(ctx):
 
 @bot.command()
 @commands.has_permissions(manage_channels=True)
+@commands.check(is_mod_channel)
 async def close_channel(ctx):
     """Makes the poll channel private."""
     poll_channel_id = 1275834751697027213  # Replace with actual channel IDs        
