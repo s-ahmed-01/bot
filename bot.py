@@ -1181,7 +1181,7 @@ async def announce(ctx):
     poll_channel_id = 1275834751697027213  # Replace with actual channel IDs        
     poll_channel = bot.get_channel(poll_channel_id)
     source_channel_id = 1340087493135175794
-    source_channel = bot.get_channel(dump_channel_id)
+    source_channel = bot.get_channel(source_channel_id)
     announcement_channel_id = 1339790130478841906
     announcement_channel = bot.get_channel(announcement_channel_id)
 
