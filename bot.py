@@ -929,60 +929,66 @@ async def matches(ctx):
     await ctx.send(matches_message)
 
 @bot.command()
-async def predictions(ctx):
+async def predictions(ctx, match_week: int = None):
     """
-    Shows a user's predictions for the upcoming week.
+    Shows a user's predictions for a specific match week.
+    If no match_week is provided, it defaults to the latest match week the user has predicted for.
     """
-    bot_channel_id = 1340519161453084783
+    bot_channel_id = 1340519161453084783  # Replace with your bot channel ID
     bot_channel = bot.get_channel(bot_channel_id)
+
     try:
         user_id = ctx.author.id
 
-        # Get the next three unique match dates
-        cursor.execute('''
-            SELECT DISTINCT match_date
-            FROM matches
-            WHERE match_date >= CURRENT_DATE
-            ORDER BY match_date
-            LIMIT 3
-        ''')
-        upcoming_dates = [row[0] for row in cursor.fetchall()]
+        # If no match_week is provided, get the latest match week the user has predicted for
+        if match_week is None:
+            cursor.execute('''
+                SELECT DISTINCT match_week
+                FROM predictions
+                WHERE user_id = ?
+                ORDER BY match_week DESC
+                LIMIT 1
+            ''', (user_id,))
+            latest_week = cursor.fetchone()
 
-        if not upcoming_dates:
-            await ctx.send("There are no upcoming matches or bonus questions in the schedule.")
-            return
+            if not latest_week:
+                await bot_channel.send("You haven't made any predictions yet.")
+                return
 
-        # Fetch all matches for those dates, with LEFT JOIN to include missing predictions
+            match_week = latest_week[0]  # Set match_week to the latest one
+
+        # Fetch match predictions for the given match week
         cursor.execute('''
             SELECT matches.match_date, matches.team1, matches.team2, matches.match_type, 
                    predictions.pred_winner, predictions.pred_score, predictions.points
             FROM matches
             LEFT JOIN predictions 
                 ON matches.id = predictions.match_id AND predictions.user_id = ?
-            WHERE matches.match_date IN ({})
+            WHERE matches.match_week = ?
             ORDER BY matches.match_date, matches.id
-        '''.format(','.join(['?'] * len(upcoming_dates))), (user_id, *upcoming_dates))
+        ''', (user_id, match_week))
         match_predictions = cursor.fetchall()
 
-        # Fetch all bonus questions for those dates, with LEFT JOIN to include missing answers
+        # Fetch bonus question predictions for the given match week
         cursor.execute('''
             SELECT bonus_questions.date, bonus_questions.question, bonus_answers.answer, bonus_answers.points
             FROM bonus_questions
             LEFT JOIN bonus_answers
                 ON bonus_questions.id = bonus_answers.question_id AND bonus_answers.user_id = ?
-            WHERE bonus_questions.date IN ({})
+            WHERE bonus_questions.match_week = ?
             ORDER BY bonus_questions.date, bonus_questions.id
-        '''.format(','.join(['?'] * len(upcoming_dates))), (user_id, *upcoming_dates))
+        ''', (user_id, match_week))
         bonus_predictions = cursor.fetchall()
 
+        # If no predictions are found
         if not match_predictions and not bonus_predictions:
-            await bot_channel.send("There are no upcoming matches or bonus questions to display.")
+            await bot_channel.send(f"No predictions found for match week {match_week}.")
             return
 
         # Prepare the embed
         embed = discord.Embed(
-            title=f"<@{user_id}>, your Predictions for Upcoming Matches and Bonus Questions",
-            description="Here are the predictions you have made (or need to make) for the next scheduled days.",
+            title=f"<@{user_id}>, your Predictions for Match Week {match_week}",
+            description="Here are your predictions for the selected match week.",
             color=discord.Color.blue()
         )
 
@@ -1018,7 +1024,6 @@ async def predictions(ctx):
 
     except Exception as e:
         await bot_channel.send(f"An error occurred while fetching your predictions: {e}")
-
 
 @bot.command()
 @commands.check(is_mod_channel)
