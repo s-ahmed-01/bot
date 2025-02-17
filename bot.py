@@ -124,6 +124,18 @@ CREATE TABLE IF NOT EXISTS users (
 ''')
 conn.commit()
 
+cursor.execute('''
+CREATE TABLE IF NOT EXISTS leaderboard (
+    user_id INTEGER,
+    username TEXT,
+    match_week INTEGER,
+    weekly_points INTEGER DEFAULT 0,
+    total_points INTEGER DEFAULT 0,
+    PRIMARY KEY (user_id, match_week)
+)
+''')
+conn.commit()
+
 announcement_channel = 1339790130478841906
 
 def is_mod_channel(ctx):
@@ -138,25 +150,21 @@ async def on_ready():
 @bot.event
 async def update_leaderboard():
     """
-    Updates the leaderboard message in a dedicated channel.
+    Updates the leaderboard message in the dedicated channel.
     """
     try:
-        leaderboard_channel_id = 1336468081563930674  # Replace with your actual channel ID
+        leaderboard_channel_id = 1336468081563930674  # Replace with actual channel ID
         leaderboard_channel = bot.get_channel(leaderboard_channel_id)
 
         if not leaderboard_channel:
             print("Error: Leaderboard channel not found.")
             return
 
-        # Fetch leaderboard data: user_id, username, match_week, and total points
+        # Fetch leaderboard data (sorted by total points, then weekly points)
         cursor.execute('''
-        SELECT p.user_id, u.username, p.match_week, 
-               COALESCE(SUM(p.points), 0) + COALESCE(SUM(b.points), 0) AS total_points
-        FROM users u
-        LEFT JOIN predictions p ON u.user_id = p.user_id
-        LEFT JOIN bonus_answers b ON u.user_id = b.user_id AND p.match_week = b.match_week
-        GROUP BY p.user_id, p.match_week
-        ORDER BY total_points DESC, p.match_week ASC
+            SELECT user_id, username, match_week, weekly_points, total_points
+            FROM leaderboard
+            ORDER BY total_points DESC, match_week ASC
         ''')
         leaderboard_data = cursor.fetchall()
 
@@ -164,13 +172,12 @@ async def update_leaderboard():
             leaderboard_message = "**🏆 Leaderboard 🏆**\n\nNo points have been awarded yet!"
         else:
             leaderboard_dict = {}
-            for user_id, username, match_week, points in leaderboard_data:
+            for user_id, username, match_week, weekly_points, total_points in leaderboard_data:
                 if username not in leaderboard_dict:
-                    leaderboard_dict[username] = {"weeks": {}, "total": 0}
-                leaderboard_dict[username]["weeks"][match_week] = points
-                leaderboard_dict[username]["total"] += points
+                    leaderboard_dict[username] = {"weeks": {}, "total": total_points}
+                leaderboard_dict[username]["weeks"][match_week] = weekly_points
 
-            # Format the leaderboard message
+            # Format leaderboard message
             leaderboard_message = "**🏆 Leaderboard 🏆**\n\n"
             for rank, (username, data) in enumerate(
                 sorted(leaderboard_dict.items(), key=lambda x: x[1]["total"], reverse=True), start=1
@@ -178,13 +185,12 @@ async def update_leaderboard():
                 week_scores = " | ".join(f"Week {week}: {points}" for week, points in sorted(data["weeks"].items()))
                 leaderboard_message += f"{rank}. **{username}** - {week_scores} | **Total: {data['total']}**\n"
 
-        # Fetch the most recent leaderboard message
+        # Edit the existing leaderboard message, or send a new one
         async for message in leaderboard_channel.history(limit=5):
             if message.author == bot.user:
                 await message.edit(content=leaderboard_message)
                 return
 
-        # If no previous leaderboard message found, send a new one
         await leaderboard_channel.send(leaderboard_message)
 
     except Exception as e:
@@ -553,6 +559,42 @@ async def on_reaction_add(reaction, user):
             ''', (user.id, str(user.name)))  # Stores the current username
             conn.commit()
 
+            # Get the latest match week the user has participated in
+            cursor.execute('''
+                SELECT MAX(match_week) FROM (
+                    SELECT match_week FROM predictions WHERE user_id = ?
+                    UNION
+                    SELECT match_week FROM bonus_answers WHERE user_id = ?
+                )
+            ''', (user.id, user.id))
+            latest_week = cursor.fetchone()[0]
+
+            if latest_week is None:
+                latest_week = 0  # No previous activity
+
+            # Find all missed weeks between the latest activity and current match week
+            cursor.execute('''
+                SELECT DISTINCT match_week FROM leaderboard
+                WHERE match_week > ? AND match_week < ?
+            ''', (latest_week, match_week))
+            missed_weeks = [row[0] for row in cursor.fetchall()]
+
+            if missed_weeks:
+                for week in missed_weeks:
+                    # Get the lowest total points for this match week (including bonus points)
+                    cursor.execute('''
+                        SELECT MIN(weekly_points) FROM leaderboard
+                        WHERE match_week = ?
+                    ''', (week,))
+                    lowest_score = cursor.fetchone()[0] or 0
+
+                    # Insert or update leaderboard entry
+                    cursor.execute('''
+                        INSERT INTO leaderboard (user_id, username, match_week, weekly_points, total_points)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(user_id, match_week) DO UPDATE SET weekly_points = excluded.weekly_points
+                    ''', (user.id, str(user.name), week, lowest_score, lowest_score))
+                    conn.commit()
 
             await message.channel.send(f"{user.mention} your prediction has been logged: {pred_winner} with score {pred_score}.")
 
@@ -609,6 +651,15 @@ async def on_reaction_add(reaction, user):
                 SET points = points + ?
                 WHERE id = ?
                 ''', (points, pred_id))
+
+                cursor.execute('''
+                INSERT INTO leaderboard (user_id, username, match_week, weekly_points, total_points)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, match_week) DO UPDATE SET
+                    weekly_points = leaderboard.weekly_points + ?,
+                    total_points = (SELECT SUM(weekly_points) FROM leaderboard WHERE user_id = ?)
+                ''', (user.id, str(user.name), match_week, points, points, points, user.id))
+                conn.commit()
 
             conn.commit()
 
@@ -698,7 +749,42 @@ async def on_reaction_add(reaction, user):
                 else:
                     await message.channel.send("You have already selected an answer. Please remove one first if you wish to change your answer.")
                     return
+                # Get the latest match week the user has participated in
+                cursor.execute('''
+                    SELECT MAX(match_week) FROM (
+                        SELECT match_week FROM predictions WHERE user_id = ?
+                        UNION
+                        SELECT match_week FROM bonus_answers WHERE user_id = ?
+                    )
+                ''', (user.id, user.id))
+                latest_week = cursor.fetchone()[0]
 
+                if latest_week is None:
+                    latest_week = 0  # No previous activity
+
+                # Find all missed weeks between the latest activity and current match week
+                cursor.execute('''
+                    SELECT DISTINCT match_week FROM leaderboard
+                    WHERE match_week > ? AND match_week < ?
+                ''', (latest_week, match_week))
+                missed_weeks = [row[0] for row in cursor.fetchall()]
+
+                if missed_weeks:
+                    for week in missed_weeks:
+                        # Get the lowest total points for this match week (including bonus points)
+                        cursor.execute('''
+                            SELECT MIN(weekly_points) FROM leaderboard
+                            WHERE match_week = ?
+                        ''', (week,))
+                        lowest_score = cursor.fetchone()[0] or 0
+
+                        # Insert or update leaderboard entry
+                        cursor.execute('''
+                            INSERT INTO leaderboard (user_id, username, match_week, weekly_points, total_points)
+                            VALUES (?, ?, ?, ?, ?)
+                            ON CONFLICT(user_id, match_week) DO UPDATE SET weekly_points = excluded.weekly_points
+                        ''', (user.id, str(user.name), week, lowest_score, lowest_score))
+                        conn.commit()
             except ValueError:
                 # Handle cases where the emoji is not in the reactions list
                 await message.channel.send("Error: Reaction not recognized. Please react with a valid emoji.")
@@ -775,6 +861,15 @@ async def on_reaction_add(reaction, user):
                     SET points = ?
                     WHERE question_id = ? AND user_id = ?
                     ''', (points_awarded, question_id, user_id))
+                    conn.commit()
+
+                    cursor.execute('''
+                    INSERT INTO leaderboard (user_id, username, match_week, weekly_points, total_points)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(user_id, match_week) DO UPDATE SET
+                        weekly_points = leaderboard.weekly_points + ?,
+                        total_points = (SELECT SUM(weekly_points) FROM leaderboard WHERE user_id = ?)
+                    ''', (user.id, str(user.name), match_week, points, points, points, user.id))
                     conn.commit()
 
                     if points_awarded > 0:
