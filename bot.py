@@ -1,7 +1,7 @@
 import asyncio
 import discord
 from discord.ext import commands
-import sqlite3  # Replace with pymongo if you prefer MongoDB
+import sqlite3
 import os
 from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -153,7 +153,7 @@ async def update_leaderboard():
     Updates the leaderboard message in the dedicated channel.
     """
     try:
-        leaderboard_channel_id = 1336468081563930674  # Replace with actual channel ID
+        leaderboard_channel_id = 1336468081563930674
         leaderboard_channel = bot.get_channel(leaderboard_channel_id)
 
         if not leaderboard_channel:
@@ -559,7 +559,7 @@ async def on_reaction_add(reaction, user):
             ''', (user.id, str(user.name)))  # Stores the current username
             conn.commit()
 
-            # Get the latest match week the user has participated in
+            # Get the latest match week
             cursor.execute('''
                 SELECT MAX(match_week) FROM (
                     SELECT match_week FROM predictions WHERE user_id = ?
@@ -583,10 +583,14 @@ async def on_reaction_add(reaction, user):
                 for week in missed_weeks:
                     # Get the lowest total points for this match week (including bonus points)
                     cursor.execute('''
-                        SELECT MIN(weekly_points) FROM leaderboard
-                        WHERE match_week = ?
+                        SELECT user_id, username, weekly_points 
+                        FROM leaderboard
+                        WHERE match_week = ? AND user_id NOT IN (SELECT user_id FROM users WHERE username = 'The Coin')  
+                        ORDER BY weekly_points ASC
+                        LIMIT 1
                     ''', (week,))
-                    lowest_score = cursor.fetchone()[0] or 0
+
+                    lowest_score = cursor.fetchone()[2] or 0 # Returns a list of tuples (user_id, username, weekly_points)
 
                     # Insert or update leaderboard entry
                     cursor.execute('''
@@ -599,7 +603,7 @@ async def on_reaction_add(reaction, user):
             await message.channel.send(f"{user.mention} your prediction has been logged: {pred_winner} with score {pred_score}.")
 
         elif poll_type == "result_poll":
-            # Handle result poll (log result and award points)
+            # Handle result poll
             options = [field.value for field in embed.fields]
             reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
 
@@ -773,10 +777,14 @@ async def on_reaction_add(reaction, user):
                     for week in missed_weeks:
                         # Get the lowest total points for this match week (including bonus points)
                         cursor.execute('''
-                            SELECT MIN(weekly_points) FROM leaderboard
-                            WHERE match_week = ?
+                            SELECT user_id, username, weekly_points 
+                            FROM leaderboard
+                            WHERE match_week = ? AND user_id NOT IN (SELECT user_id FROM users WHERE username = 'The Coin')  
+                            ORDER BY weekly_points ASC
+                            LIMIT 1
                         ''', (week,))
-                        lowest_score = cursor.fetchone()[0] or 0
+
+                        lowest_score = cursor.fetchone()[2] or 0 # Returns a list of tuples (user_id, username, weekly_points)
 
                         # Insert or update leaderboard entry
                         cursor.execute('''
