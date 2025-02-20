@@ -625,14 +625,14 @@ async def on_reaction_add(reaction, user):
 
             # Award points for correct predictions
             cursor.execute('''
-            SELECT id, user_id, pred_winner, pred_score
+            SELECT id, user_id, match_week, pred_winner, pred_score
             FROM predictions
             WHERE match_id = ?
             ''', (match_id,))
             predictions = cursor.fetchall()
 
             for prediction in predictions:
-                pred_id, user_id, pred_winner, pred_score = prediction
+                pred_id, user_id, match_week, pred_winner, pred_score = prediction
                 points = 0
 
                 # Award points for correct winner
