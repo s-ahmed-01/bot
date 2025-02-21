@@ -108,15 +108,6 @@ CREATE TABLE IF NOT EXISTS bonus_questions (
 conn.commit()
 
 cursor.execute('''
-CREATE TABLE IF NOT EXISTS leaderboard (
-    user_id INTEGER PRIMARY KEY,
-    username TEXT,
-    points INTEGER
-)
-''')
-conn.commit()
-
-cursor.execute('''
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
     username TEXT NOT NULL
@@ -576,7 +567,7 @@ async def on_reaction_add(reaction, user):
             cursor.execute('''
                 SELECT DISTINCT match_week FROM leaderboard
                 WHERE match_week > ? AND match_week < ?
-            ''', (latest_week, match_week))
+            ''', (latest_week, match_row[1]))
             missed_weeks = [row[0] for row in cursor.fetchall()]
 
             if missed_weeks:
