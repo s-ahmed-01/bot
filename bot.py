@@ -456,8 +456,8 @@ async def create_bonus_poll(prediction_channel, result_channel, question_id, que
 
 @bot.event
 async def on_reaction_add(reaction, user):
-    if user.bot:
-        return  # Ignore bot reactions
+    if user.id == bot.user.id:
+        return  # Ignore reactions from this bot only
 
     message = reaction.message
 
