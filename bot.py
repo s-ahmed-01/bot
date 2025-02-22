@@ -588,6 +588,11 @@ async def on_reaction_add(reaction, user):
                         INSERT INTO leaderboard (user_id, username, match_week, weekly_points, total_points)
                         VALUES (?, ?, ?, ?, ?)
                         ON CONFLICT(user_id, match_week) DO UPDATE SET weekly_points = excluded.weekly_points
+                                total_points = (
+                                    SELECT SUM(weekly_points) 
+                                    FROM leaderboard 
+                                    WHERE user_id = excluded.user_id
+                                )
                     ''', (user.id, str(user.name), week, lowest_score, lowest_score))
                     conn.commit()
 
@@ -652,8 +657,8 @@ async def on_reaction_add(reaction, user):
                 VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(user_id, match_week) DO UPDATE SET
                     weekly_points = leaderboard.weekly_points + ?,
-                    total_points = (SELECT SUM(weekly_points) FROM leaderboard WHERE user_id = ?)
-                ''', (user.id, str(user.name), match_week, points, points, points, user.id))
+                    total_points = (SELECT SUM(weekly_points) FROM leaderboard WHERE user_id = ?) + ?
+                ''', (user.id, str(user.name), match_week, points, points, points, user.id, points))
                 conn.commit()
 
             conn.commit()
@@ -782,6 +787,11 @@ async def on_reaction_add(reaction, user):
                             INSERT INTO leaderboard (user_id, username, match_week, weekly_points, total_points)
                             VALUES (?, ?, ?, ?, ?)
                             ON CONFLICT(user_id, match_week) DO UPDATE SET weekly_points = excluded.weekly_points
+                            total_points = (
+                                SELECT SUM(weekly_points) 
+                                FROM leaderboard 
+                                WHERE user_id = excluded.user_id
+                                )
                         ''', (user.id, str(user.name), week, lowest_score, lowest_score))
                         conn.commit()
             except ValueError:
@@ -867,8 +877,8 @@ async def on_reaction_add(reaction, user):
                     VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(user_id, match_week) DO UPDATE SET
                         weekly_points = leaderboard.weekly_points + ?,
-                        total_points = (SELECT SUM(weekly_points) FROM leaderboard WHERE user_id = ?)
-                    ''', (user.id, str(user.name), match_week, points, points, points, user.id))
+                        total_points = (SELECT SUM(weekly_points) FROM leaderboard WHERE user_id = ?) + ?
+                    ''', (user.id, str(user.name), match_week, points, points, points, user.id, points))
                     conn.commit()
 
                     if points_awarded > 0:
