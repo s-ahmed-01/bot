@@ -118,7 +118,6 @@ conn.commit()
 cursor.execute('''
 CREATE TABLE IF NOT EXISTS leaderboard (
     user_id INTEGER,
-    username TEXT,
     match_week INTEGER,
     weekly_points INTEGER DEFAULT 0,
     total_points INTEGER DEFAULT 0,
@@ -153,7 +152,7 @@ async def update_leaderboard():
 
         # Fetch leaderboard data (sorted by total points, then weekly points)
         cursor.execute('''
-            SELECT user_id, username, match_week, weekly_points, total_points
+            SELECT user_id, match_week, weekly_points, total_points
             FROM leaderboard
             ORDER BY total_points DESC, match_week ASC
         ''')
@@ -163,16 +162,35 @@ async def update_leaderboard():
             leaderboard_message = "**🏆 Leaderboard 🏆**\n\nNo points have been awarded yet!"
         else:
             leaderboard_dict = {}
-            for user_id, username, match_week, weekly_points, total_points in leaderboard_data:
-                if username not in leaderboard_dict:
-                    leaderboard_dict[username] = {"weeks": {}, "total": total_points}
-                leaderboard_dict[username]["weeks"][match_week] = weekly_points
+            user_id_list = set()
 
-            # Format leaderboard message
+            # Organize leaderboard data by user_id
+            for user_id, match_week, weekly_points, total_points in leaderboard_data:
+                if user_id not in leaderboard_dict:
+                    leaderboard_dict[user_id] = {"weeks": {}, "total": total_points}
+                leaderboard_dict[user_id]["weeks"][match_week] = weekly_points
+                user_id_list.add(user_id)
+
+            # Fetch usernames from the users table
+            cursor.execute(f'''
+                SELECT user_id, username FROM users
+                WHERE user_id IN ({",".join(["?"] * len(user_id_list))})
+            ''', tuple(user_id_list))
+            user_data = dict(cursor.fetchall())  # Map user_id -> username
+
             leaderboard_message = "**🏆 Leaderboard 🏆**\n\n"
-            for rank, (username, data) in enumerate(
+            for rank, (user_id, data) in enumerate(
                 sorted(leaderboard_dict.items(), key=lambda x: x[1]["total"], reverse=True), start=1
             ):
+                # Get username from DB or Discord API
+                username = user_data.get(user_id)
+                if not username:  # If username is missing from DB, fetch from Discord
+                    try:
+                        user = await bot.fetch_user(user_id)
+                        username = user.name
+                    except:
+                        username = f"Unknown ({user_id})"  # Fallback
+
                 week_scores = " | ".join(f"Week {week}: {points}" for week, points in sorted(data["weeks"].items()))
                 leaderboard_message += f"{rank}. **{username}** - {week_scores} | **Total: {data['total']}**\n"
 
@@ -186,6 +204,7 @@ async def update_leaderboard():
 
     except Exception as e:
         print(f"Error updating leaderboard: {e}")
+
 
 
 
@@ -653,12 +672,12 @@ async def on_reaction_add(reaction, user):
                 ''', (points, pred_id))
 
                 cursor.execute('''
-                INSERT INTO leaderboard (user_id, username, match_week, weekly_points, total_points)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO leaderboard (user_id, match_week, weekly_points, total_points)
+                VALUES (?, ?, ?, ?)
                 ON CONFLICT(user_id, match_week) DO UPDATE SET
                     weekly_points = leaderboard.weekly_points + ?,
                     total_points = (SELECT SUM(weekly_points) FROM leaderboard WHERE user_id = ?) + ?
-                ''', (user.id, str(user.name), match_week, points, points, points, user.id, points))
+                ''', (user_id, match_week, points, points, points, user.id, points))
                 conn.commit()
 
             conn.commit()
@@ -873,12 +892,12 @@ async def on_reaction_add(reaction, user):
                     conn.commit()
 
                     cursor.execute('''
-                    INSERT INTO leaderboard (user_id, username, match_week, weekly_points, total_points)
+                    INSERT INTO leaderboard (user_id, match_week, weekly_points, total_points)
                     VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(user_id, match_week) DO UPDATE SET
                         weekly_points = leaderboard.weekly_points + ?,
                         total_points = (SELECT SUM(weekly_points) FROM leaderboard WHERE user_id = ?) + ?
-                    ''', (user.id, str(user.name), match_week, points, points, points, user.id, points))
+                    ''', (user_id, match_week, points, points, points, user.id, points))
                     conn.commit()
 
                     if points_awarded > 0:
@@ -1257,7 +1276,7 @@ async def delete_polls(match_date: str):
     match_date_with_year = match_date.replace(year=current_year).strftime("%Y-%m-%d")
     try:
         # Fetch the channel IDs where the polls are located
-        poll_channel_id = 1275834751697027213  # Replace with actual channel IDs        
+        poll_channel_id = 1343691622872911993  # Replace with actual channel IDs        
         channel = bot.get_channel(poll_channel_id)
         if channel is None:
             print(f"Channel with ID {poll_channel_id} not found.")
@@ -1302,7 +1321,7 @@ async def schedule_poll_deletion(ctx, match_date: str):
 @commands.check(is_mod_channel)
 async def announce(ctx):
     """Takes the last message from the source channel, posts it in the announcement channel, and closes the poll channel."""
-    poll_channel_id = 1275834751697027213  # Replace with actual channel IDs        
+    poll_channel_id = 1343691622872911993  # Replace with actual channel IDs        
     poll_channel = bot.get_channel(poll_channel_id)
     source_channel_id = 1340087493135175794
     source_channel = bot.get_channel(source_channel_id)
@@ -1338,7 +1357,7 @@ async def announce(ctx):
 @commands.check(is_mod_channel)
 async def close_channel(ctx):
     """Makes the poll channel private."""
-    poll_channel_id = 1275834751697027213  # Replace with actual channel IDs        
+    poll_channel_id = 1343691622872911993  # Replace with actual channel IDs        
     poll_channel = bot.get_channel(poll_channel_id)
 
     try:
