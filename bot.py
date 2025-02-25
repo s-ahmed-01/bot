@@ -120,7 +120,6 @@ CREATE TABLE IF NOT EXISTS leaderboard (
     user_id INTEGER,
     match_week INTEGER,
     weekly_points INTEGER DEFAULT 0,
-    total_points INTEGER DEFAULT 0,
     PRIMARY KEY (user_id, match_week)
 )
 ''')
@@ -150,11 +149,11 @@ async def update_leaderboard():
             print("Error: Leaderboard channel not found.")
             return
 
-        # Fetch leaderboard data (sorted by total points, then weekly points)
+        # Fetch leaderboard data (sorted by match week)
         cursor.execute('''
-            SELECT user_id, match_week, weekly_points, total_points
+            SELECT user_id, match_week, weekly_points
             FROM leaderboard
-            ORDER BY total_points DESC, match_week ASC
+            ORDER BY match_week ASC
         ''')
         leaderboard_data = cursor.fetchall()
 
@@ -164,11 +163,12 @@ async def update_leaderboard():
             leaderboard_dict = {}
             user_id_list = set()
 
-            # Organize leaderboard data by user_id
-            for user_id, match_week, weekly_points, total_points in leaderboard_data:
+            # Organize leaderboard data by user_id and calculate total points dynamically
+            for user_id, match_week, weekly_points in leaderboard_data:
                 if user_id not in leaderboard_dict:
-                    leaderboard_dict[user_id] = {"weeks": {}, "total": total_points}
+                    leaderboard_dict[user_id] = {"weeks": {}, "total": 0}
                 leaderboard_dict[user_id]["weeks"][match_week] = weekly_points
+                leaderboard_dict[user_id]["total"] += weekly_points  # Calculate total points dynamically
                 user_id_list.add(user_id)
 
             # Fetch usernames from the users table
@@ -189,7 +189,7 @@ async def update_leaderboard():
                         user = await bot.fetch_user(user_id)
                         username = user.name
                     except:
-                        username = f"Unknown ({user_id})"  # Fallback
+                        username = f"Unknown ({user_id})"  # Fallback if user cannot be fetched
 
                 week_scores = " | ".join(f"Week {week}: {points}" for week, points in sorted(data["weeks"].items()))
                 leaderboard_message += f"{rank}. **{username}** - {week_scores} | **Total: {data['total']}**\n"
@@ -576,7 +576,7 @@ async def on_reaction_add(reaction, user):
                     SELECT match_week FROM bonus_answers WHERE user_id = ?
                 )
             ''', (user.id, user.id))
-            latest_week = cursor.fetchone()[0]
+            latest_week = cursor.fetchone()[0] or 0
 
             if latest_week is None:
                 latest_week = 0  # No previous activity
@@ -605,16 +605,11 @@ async def on_reaction_add(reaction, user):
 
                     # Insert or update leaderboard entry
                     cursor.execute('''
-                        INSERT INTO leaderboard (user_id, match_week, weekly_points, total_points)
-                        VALUES (?, ?, ?, ?)
+                        INSERT INTO leaderboard (user_id, match_week, weekly_points)
+                        VALUES (?, ?, ?)
                         ON CONFLICT(user_id, match_week) DO UPDATE SET 
-                            weekly_points = excluded.weekly_points,
-                            total_points = (
-                                SELECT SUM(weekly_points) 
-                                FROM leaderboard 
-                                WHERE user_id = excluded.user_id
-                            )
-                    ''', (user.id, week, lowest_score, lowest_score))
+                            weekly_points = excluded.weekly_points
+                    ''', (user.id, week, lowest_score))
                     conn.commit()
 
             await message.channel.send(f"{user.mention} your prediction has been logged: {pred_winner} with score {pred_score}.")
@@ -674,12 +669,11 @@ async def on_reaction_add(reaction, user):
                 ''', (points, pred_id))
 
                 cursor.execute('''
-                INSERT INTO leaderboard (user_id, match_week, weekly_points, total_points)
-                VALUES (?, ?, ?, ?)
+                INSERT INTO leaderboard (user_id, match_week, weekly_points)
+                VALUES (?, ?, ?)
                 ON CONFLICT(user_id, match_week) DO UPDATE SET
-                    weekly_points = leaderboard.weekly_points + ?,
-                    total_points = (SELECT SUM(weekly_points) FROM leaderboard WHERE user_id = ?) + ?
-                ''', (user_id, match_week, points, points, points, user.id, points))
+                    weekly_points = leaderboard.weekly_points + ?
+                ''', (user_id, match_week, points, points))
                 conn.commit()
 
             conn.commit()
@@ -794,7 +788,7 @@ async def on_reaction_add(reaction, user):
                     for week in missed_weeks:
                         # Get the lowest total points for this match week (including bonus points)
                         cursor.execute('''
-                            SELECT user_id, username, weekly_points 
+                            SELECT user_id, weekly_points 
                             FROM leaderboard
                             WHERE match_week = ? AND user_id NOT IN (SELECT user_id FROM users WHERE username = 'The Coin')  
                             ORDER BY weekly_points ASC
@@ -805,15 +799,10 @@ async def on_reaction_add(reaction, user):
 
                         # Insert or update leaderboard entry
                         cursor.execute('''
-                            INSERT INTO leaderboard (user_id, username, match_week, weekly_points, total_points)
-                            VALUES (?, ?, ?, ?, ?)
+                            INSERT INTO leaderboard (user_id, match_week, weekly_points)
+                            VALUES (?, ?, ?)
                             ON CONFLICT(user_id, match_week) DO UPDATE SET weekly_points = excluded.weekly_points
-                            total_points = (
-                                SELECT SUM(weekly_points) 
-                                FROM leaderboard 
-                                WHERE user_id = excluded.user_id
-                                )
-                        ''', (user.id, str(user.name), week, lowest_score, lowest_score))
+                        ''', (user.id, week, lowest_score))
                         conn.commit()
             except ValueError:
                 # Handle cases where the emoji is not in the reactions list
@@ -894,12 +883,11 @@ async def on_reaction_add(reaction, user):
                     conn.commit()
 
                     cursor.execute('''
-                    INSERT INTO leaderboard (user_id, match_week, weekly_points, total_points)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO leaderboard (user_id, match_week, weekly_points)
+                    VALUES (?, ?, ?)
                     ON CONFLICT(user_id, match_week) DO UPDATE SET
-                        weekly_points = leaderboard.weekly_points + ?,
-                        total_points = (SELECT SUM(weekly_points) FROM leaderboard WHERE user_id = ?) + ?
-                    ''', (user_id, match_week, points, points, points, user.id, points))
+                        weekly_points = leaderboard.weekly_points + ?
+                    ''', (user_id, match_week, points, points))
                     conn.commit()
 
                     if points_awarded > 0:
@@ -1054,7 +1042,7 @@ async def matches(ctx):
     await ctx.send(matches_message)
 
 @bot.command()
-async def predictions(ctx, match_week: int = None):
+async def predictions(ctx, user, match_week: int = None):
     """
     Shows a user's predictions for a specific match week.
     If no match_week is provided, it defaults to the latest match week the user has predicted for.
@@ -1112,7 +1100,7 @@ async def predictions(ctx, match_week: int = None):
 
         # Prepare the embed
         embed = discord.Embed(
-            title=f"<@{user_id}>, your Predictions for Match Week {match_week}",
+            title=f"<{user.mention}>, your Predictions for Match Week {match_week}",
             description="Here are your predictions for the selected match week.",
             color=discord.Color.blue()
         )
