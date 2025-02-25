@@ -569,7 +569,6 @@ async def on_reaction_add(reaction, user):
             ''', (user.id, str(user.name)))  # Stores the current username
             conn.commit()
 
-            # Get the latest match week
             cursor.execute('''
                 SELECT MAX(match_week) FROM (
                     SELECT match_week FROM predictions WHERE user_id = ?
@@ -591,28 +590,31 @@ async def on_reaction_add(reaction, user):
 
             if missed_weeks:
                 for week in missed_weeks:
-                    # Get the lowest total points for this match week (including bonus points)
+                    # Get the lowest total points for this match week (excluding The Coin)
                     cursor.execute('''
-                        SELECT user_id, username, weekly_points 
-                        FROM leaderboard
-                        WHERE match_week = ? AND user_id NOT IN (SELECT user_id FROM users WHERE username = 'The Coin')  
-                        ORDER BY weekly_points ASC
+                        SELECT weekly_points 
+                        FROM leaderboard 
+                        WHERE match_week = ? 
+                        AND user_id NOT IN (SELECT user_id FROM users WHERE username = 'The Coin')  
+                        ORDER BY weekly_points ASC 
                         LIMIT 1
                     ''', (week,))
-
-                    lowest_score = cursor.fetchone()[2] or 0 # Returns a list of tuples (user_id, username, weekly_points)
+                    
+                    lowest_score_row = cursor.fetchone()
+                    lowest_score = lowest_score_row[0] if lowest_score_row else 0  # Ensure no NoneType error
 
                     # Insert or update leaderboard entry
                     cursor.execute('''
-                        INSERT INTO leaderboard (user_id, username, match_week, weekly_points, total_points)
-                        VALUES (?, ?, ?, ?, ?)
-                        ON CONFLICT(user_id, match_week) DO UPDATE SET weekly_points = excluded.weekly_points
-                                total_points = (
-                                    SELECT SUM(weekly_points) 
-                                    FROM leaderboard 
-                                    WHERE user_id = excluded.user_id
-                                )
-                    ''', (user.id, str(user.name), week, lowest_score, lowest_score))
+                        INSERT INTO leaderboard (user_id, match_week, weekly_points, total_points)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(user_id, match_week) DO UPDATE SET 
+                            weekly_points = excluded.weekly_points,
+                            total_points = (
+                                SELECT SUM(weekly_points) 
+                                FROM leaderboard 
+                                WHERE user_id = excluded.user_id
+                            )
+                    ''', (user.id, week, lowest_score, lowest_score))
                     conn.commit()
 
             await message.channel.send(f"{user.mention} your prediction has been logged: {pred_winner} with score {pred_score}.")
