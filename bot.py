@@ -178,10 +178,33 @@ async def update_leaderboard():
             ''', tuple(user_id_list))
             user_data = dict(cursor.fetchall())  # Map user_id -> username
 
+            # Fetch the latest match week
+            cursor.execute('SELECT MAX(match_week) FROM leaderboard')
+            latest_week = cursor.fetchone()[0]
+
+            def tie_breaker(user_data):
+                """
+                Recursively break ties by comparing scores from previous weeks.
+                """
+                def compare_users(user1, user2, week):
+                    if week < 1:
+                        return 0  # No more weeks to compare, consider them equal
+
+                    score1 = user_data[user1]["weeks"].get(week, 0)
+                    score2 = user_data[user2]["weeks"].get(week, 0)
+
+                    if score1 != score2:
+                        return score2 - score1  # Higher score first
+
+                    return compare_users(user1, user2, week - 1)  # Compare previous week
+
+                return sorted(user_data.keys(), key=lambda user: (user_data[user]["total"], user_data[user]["weeks"].get(latest_week, 0)), reverse=True, cmp=compare_users)
+
+            sorted_users = tie_breaker(leaderboard_dict)
+
             leaderboard_message = "**🏆 Leaderboard 🏆**\n\n"
-            for rank, (user_id, data) in enumerate(
-                sorted(leaderboard_dict.items(), key=lambda x: x[1]["total"], reverse=True), start=1
-            ):
+            for rank, user_id in enumerate(sorted_users, start=1):
+                data = leaderboard_dict[user_id]
                 # Get username from DB or Discord API
                 username = user_data.get(user_id)
                 if not username:  # If username is missing from DB, fetch from Discord
@@ -204,7 +227,6 @@ async def update_leaderboard():
 
     except Exception as e:
         print(f"Error updating leaderboard: {e}")
-
 
 
 
@@ -952,7 +974,7 @@ async def on_reaction_remove(reaction, user):
         selected_option = option_split[selected_index]
 
         if selected_option in existing_answers:
-            print("i got here :)")
+            print("i got here :/)")
             existing_answers.remove(selected_option)
             await message.channel.send(f"{selected_option} has been removed from your selection.")
             print(existing_answers)  # Remove selection
@@ -967,7 +989,7 @@ async def on_reaction_remove(reaction, user):
         ''', (updated_answers, user.id, question_id))
         conn.commit()
     
-    elif poll_type == "match_poll":
+    elif "Match Poll" in title:
         try:
             match_details = title.split(":")[1].strip()  # Extract teams and match type
             teams, match_type = match_details.rsplit("(", 1)
@@ -1247,7 +1269,7 @@ async def delete_match(ctx, team1: str, team2: str, match_type: str, match_date:
     try:
         match_date = datetime.strptime(match_date, "%d-%m")      
         current_year = datetime.now().year
-        match_date_with_year = match_date.replace(year=current_year).strftime("%Y-%m-%d")
+        match_date_with_year = match_date.replace(year(current_year).strftime("%Y-%m-%d"))
         
         cursor.execute('DELETE FROM matches WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?', (team1, team2, match_type, match_date_with_year))
         conn.commit()
@@ -1263,7 +1285,7 @@ async def delete_polls(match_date: str):
     """
     match_date = datetime.strptime(match_date, "%d-%m")      
     current_year = datetime.now().year
-    match_date_with_year = match_date.replace(year=current_year).strftime("%Y-%m-%d")
+    match_date_with_year = match_date.replace(year(current_year).strftime("%Y-%m-%d"))
     try:
         # Fetch the channel IDs where the polls are located
         poll_channel_id = 1343691622872911993  # Replace with actual channel IDs        
@@ -1296,8 +1318,8 @@ async def schedule_poll_deletion(ctx, match_date: str):
         # Convert match_date to datetime
         match_date_dt = datetime.strptime(match_date, "%Y-%m-%d")
         deletion_time_utc = uk_tz.localize(
-            datetime.combine(match_date_dt, datetime.min.time()) + timedelta(hours=17)
-        ).astimezone(pytz.utc)  # Convert to UTC for the scheduler
+            datetime.combine(match_date_dt, datetime.min.time()) + timedelta(hours(17)
+        ).astimezone(pytz.utc))  # Convert to UTC for the scheduler
 
         # Schedule task
         scheduler.add_job(delete_polls, "date", run_date=deletion_time_utc, args=[match_date_dt])
