@@ -182,7 +182,7 @@ async def update_leaderboard():
             cursor.execute('SELECT MAX(match_week) FROM leaderboard')
             latest_week = cursor.fetchone()[0]
 
-            def tie_breaker(user_data):
+            def tie_breaker(user_data, latest_week):
                 """
                 Recursively break ties by comparing scores from previous weeks.
                 """
@@ -198,10 +198,28 @@ async def update_leaderboard():
 
                     return compare_users(user1, user2, week - 1)  # Compare previous week
 
-                return sorted(user_data.keys(), key=lambda user: (user_data[user]["total"], user_data[user]["weeks"].get(latest_week, 0)), reverse=True, cmp=compare_users)
+                def sort_key(user):
+                    return (user_data[user]["total"], user_data[user]["weeks"].get(latest_week, 0))
 
-            sorted_users = tie_breaker(leaderboard_dict)
+                sorted_users = sorted(user_data.keys(), key=sort_key, reverse=True)
 
+                # Handle ties by recursively comparing scores from previous weeks
+                i = 0
+                while i < len(sorted_users) - 1:
+                    j = i
+                    while j < len(sorted_users) - 1 and sort_key(sorted_users[j]) == sort_key(sorted_users[j + 1]):
+                        j += 1
+                    if j > i:
+                        # There is a tie between sorted_users[i:j+1]
+                        tied_users = sorted_users[i:j + 1]
+                        tied_users.sort(key=lambda user: compare_users(user, tied_users[0], latest_week - 1), reverse=True)
+                        sorted_users[i:j + 1] = tied_users
+                    i = j + 1
+
+                return sorted_users
+
+            # Usage in update_leaderboard function
+            sorted_users = tie_breaker(leaderboard_dict, latest_week)
             leaderboard_message = "**🏆 Leaderboard 🏆**\n\n"
             for rank, user_id in enumerate(sorted_users, start=1):
                 data = leaderboard_dict[user_id]
