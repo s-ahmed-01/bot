@@ -610,6 +610,11 @@ async def on_reaction_add(reaction, user):
             conn.commit()
 
             cursor.execute('''
+                SELECT MAX(match_week) FROM bonus_questions
+            ''')
+            max_question_week = cursor.fetchone()[0] or 0
+            
+            cursor.execute('''
                 SELECT MAX(match_week) FROM (
                     SELECT match_week FROM predictions WHERE user_id = ?
                     UNION
@@ -617,15 +622,16 @@ async def on_reaction_add(reaction, user):
                 )
             ''', (user.id, user.id))
             latest_week = cursor.fetchone()[0] or 0
-
+            print(latest_week)
+            
             if latest_week is None:
                 latest_week = 0  # No previous activity
 
             # Find all missed weeks between the latest activity and current match week
             cursor.execute('''
                 SELECT DISTINCT match_week FROM leaderboard
-                WHERE match_week > ? AND match_week < ?
-            ''', (latest_week, match_row[1]))
+                WHERE match_week > ? AND match_week < ? AND user_id = ?
+            ''', (latest_week, match_row[1], user.id))
             missed_weeks = [row[0] for row in cursor.fetchall()]
 
             if missed_weeks:
@@ -652,7 +658,7 @@ async def on_reaction_add(reaction, user):
                     ''', (user.id, week, lowest_score))
                     conn.commit()
 
-            await message.channel.send(f"{user.mention} your prediction has been logged: {pred_winner} with score {pred_score}.")
+            await message.channel.send(f"{user.name} your prediction has been logged: {pred_winner} with score {pred_score}.")
 
         elif poll_type == "result_poll":
             # Handle result poll
@@ -820,12 +826,12 @@ async def on_reaction_add(reaction, user):
                 # Find all missed weeks between the latest activity and current match week
                 cursor.execute('''
                     SELECT DISTINCT match_week FROM leaderboard
-                    WHERE match_week > ? AND match_week < ?
-                ''', (latest_week, match_week))
+                    WHERE match_week > ? AND match_week < ? AND user_id = ?
+                ''', (latest_week, week, user.id))
                 missed_weeks = [row[0] for row in cursor.fetchall()]
 
                 if missed_weeks:
-                    for week in missed_weeks:
+                    for missed_week in missed_weeks:
                         # Get the lowest total points for this match week (including bonus points)
                         cursor.execute('''
                             SELECT user_id, weekly_points 
@@ -833,7 +839,7 @@ async def on_reaction_add(reaction, user):
                             WHERE match_week = ? AND user_id NOT IN (SELECT user_id FROM users WHERE username = 'The Coin')  
                             ORDER BY weekly_points ASC
                             LIMIT 1
-                        ''', (week,))
+                        ''', (missed_week,))
 
                         lowest_score = cursor.fetchone()[2] or 0 # Returns a list of tuples (user_id, username, weekly_points)
 
@@ -842,7 +848,7 @@ async def on_reaction_add(reaction, user):
                             INSERT INTO leaderboard (user_id, match_week, weekly_points)
                             VALUES (?, ?, ?)
                             ON CONFLICT(user_id, match_week) DO UPDATE SET weekly_points = excluded.weekly_points
-                        ''', (user.id, week, lowest_score))
+                        ''', (user.id, missed_week, lowest_score))
                         conn.commit()
             except ValueError:
                 # Handle cases where the emoji is not in the reactions list
