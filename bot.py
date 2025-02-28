@@ -630,9 +630,10 @@ async def on_reaction_add(reaction, user):
             # Find all missed weeks between the latest activity and current match week
             cursor.execute('''
                 SELECT DISTINCT match_week FROM leaderboard
-                WHERE match_week > ? AND match_week < ? AND user_id = ?
-            ''', (latest_week, match_row[1], user.id))
+                WHERE match_week > ? AND match_week < ?
+            ''', (latest_week, match_row[1]))
             missed_weeks = [row[0] for row in cursor.fetchall()]
+            print(missed_weeks)
 
             if missed_weeks:
                 for week in missed_weeks:
@@ -647,6 +648,7 @@ async def on_reaction_add(reaction, user):
                     ''', (week,))
                     
                     lowest_score_row = cursor.fetchone()
+                    print(lowest_score_row)
                     lowest_score = lowest_score_row[0] if lowest_score_row else 0  # Ensure no NoneType error
 
                     # Insert or update leaderboard entry
