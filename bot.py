@@ -623,8 +623,8 @@ async def on_reaction_add(reaction, user):
                 latest_week = 0  # No previous activity
 
             # Find all missed weeks between the latest activity and current match week
-            all_weeks = list(range(latest_week + 1, match_row[1]))
-            print(f"all_weeks: {all_weeks}")
+            missed_weeks = list(range(latest_week + 1, match_row[1]))
+            print(f"all_weeks: {missed_weeks}")
 
             if missed_weeks:
                 for week in missed_weeks:
