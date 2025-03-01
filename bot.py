@@ -608,11 +608,6 @@ async def on_reaction_add(reaction, user):
             ON CONFLICT(user_id) DO UPDATE SET username = excluded.username
             ''', (user.id, str(user.name)))  # Stores the current username
             conn.commit()
-
-            cursor.execute('''
-                SELECT MAX(match_week) FROM bonus_questions
-            ''')
-            max_question_week = cursor.fetchone()[0] or 0
             
             cursor.execute('''
                 SELECT MAX(match_week) FROM (
@@ -628,23 +623,17 @@ async def on_reaction_add(reaction, user):
                 latest_week = 0  # No previous activity
 
             # Find all missed weeks between the latest activity and current match week
-            cursor.execute('''
-                SELECT DISTINCT match_week FROM leaderboard
-                WHERE match_week > ? AND match_week < ?
-            ''', (latest_week, match_row[1]))
-            missed_weeks = [row[0] for row in cursor.fetchall()]
-            print(missed_weeks)
+            all_weeks = list(range(latest_week + 1, match_row[1]))
+            print(f"all_weeks: {all_weeks}")
 
             if missed_weeks:
                 for week in missed_weeks:
                     # Get the lowest total points for this match week (excluding The Coin)
                     cursor.execute('''
-                        SELECT weekly_points 
+                        SELECT MIN(weekly_points) 
                         FROM leaderboard 
                         WHERE match_week = ? 
-                        AND user_id NOT IN (SELECT user_id FROM users WHERE username = 'The Coin')  
-                        ORDER BY weekly_points ASC 
-                        LIMIT 1
+                        AND user_id NOT IN (SELECT user_id FROM users WHERE username = 'The Coin')
                     ''', (week,))
                     
                     lowest_score_row = cursor.fetchone()
