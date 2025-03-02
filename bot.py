@@ -181,6 +181,7 @@ async def update_leaderboard():
             # Fetch the latest match week
             cursor.execute('SELECT MAX(match_week) FROM leaderboard')
             latest_week = cursor.fetchone()[0]
+            print(f"latest_week: {latest_week}")
 
             def tie_breaker(user_data, latest_week):
                 """
@@ -202,6 +203,7 @@ async def update_leaderboard():
                     return (user_data[user]["total"], user_data[user]["weeks"].get(latest_week, 0))
 
                 sorted_users = sorted(user_data.keys(), key=sort_key, reverse=True)
+                print(f"sorted_users before tie-breaking: {sorted_users}")
 
                 # Handle ties by recursively comparing scores from previous weeks
                 i = 0
@@ -212,10 +214,12 @@ async def update_leaderboard():
                     if j > i:
                         # There is a tie between sorted_users[i:j+1]
                         tied_users = sorted_users[i:j + 1]
+                        print(f"Tie detected between users: {tied_users}")
                         tied_users.sort(key=lambda user: compare_users(user, tied_users[0], latest_week - 1), reverse=True)
                         sorted_users[i:j + 1] = tied_users
                     i = j + 1
 
+                print(f"sorted_users after tie-breaking: {sorted_users}")
                 return sorted_users
 
             # Usage in update_leaderboard function
@@ -245,9 +249,6 @@ async def update_leaderboard():
 
     except Exception as e:
         print(f"Error updating leaderboard: {e}")
-
-
-
 
 @bot.command()
 @commands.check(is_mod_channel)
