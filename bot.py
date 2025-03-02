@@ -194,6 +194,8 @@ async def update_leaderboard():
                     score1 = user_data[user1]["weeks"].get(week, 0)
                     score2 = user_data[user2]["weeks"].get(week, 0)
 
+                    print(f"Comparing users {user1} and {user2} for week {week}: score1={score1}, score2={score2}")
+
                     if score1 != score2:
                         return score2 - score1  # Higher score first
 
@@ -1285,15 +1287,17 @@ async def delete_match(ctx, team1: str, team2: str, match_type: str, match_date:
     Deletes a match (think UB permutations that don't happen) and all associated votes
     """
     try:
-        match_date = datetime.strptime(match_date, "%d-%m")      
+        match_date = datetime.strptime(match_date, "%d-%m")
         current_year = datetime.now().year
-        match_date_with_year = match_date.replace(year(current_year).strftime("%Y-%m-%d"))
+        match_date_with_year = match_date.replace(year=current_year).strftime("%Y-%m-%d")
         
         cursor.execute('DELETE FROM matches WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?', (team1, team2, match_type, match_date_with_year))
         conn.commit()
         await ctx.send(f"Match has been deleted.")
     except ValueError:
-        await ctx.send("Match not found.")
+        await ctx.send("Invalid date format. Please use DD-MM.")
+    except Exception as e:
+        await ctx.send(f"Error deleting match: {e}")
 
 async def delete_polls(match_date: str):
     """
@@ -1303,7 +1307,7 @@ async def delete_polls(match_date: str):
     """
     match_date = datetime.strptime(match_date, "%d-%m")      
     current_year = datetime.now().year
-    match_date_with_year = match_date.replace(year(current_year).strftime("%Y-%m-%d"))
+    match_date_with_year = match_date.replace(year=current_year.strftime("%Y-%m-%d"))
     try:
         # Fetch the channel IDs where the polls are located
         poll_channel_id = 1343691622872911993  # Replace with actual channel IDs        
@@ -1334,13 +1338,16 @@ async def schedule_poll_deletion(ctx, match_date: str):
     """
     try:
         # Convert match_date to datetime
-        match_date_dt = datetime.strptime(match_date, "%Y-%m-%d")
+        match_date_dt = datetime.strptime(match_date, "%d-%m")
+        current_year = datetime.now().year
+        match_date_with_year = match_date_dt.replace(year=current_year)
+
         deletion_time_utc = uk_tz.localize(
-            datetime.combine(match_date_dt, datetime.min.time()) + timedelta(hours(17)
-        ).astimezone(pytz.utc))  # Convert to UTC for the scheduler
+            datetime.combine(match_date_with_year, datetime.min.time()) + timedelta(hours=17)
+        ).astimezone(pytz.utc)  # Convert to UTC for the scheduler
 
         # Schedule task
-        scheduler.add_job(delete_polls, "date", run_date=deletion_time_utc, args=[match_date_dt])
+        scheduler.add_job(delete_polls, "date", run_date=deletion_time_utc, args=[match_date_with_year.strftime("%d-%m")])
         await ctx.send(f"Poll deletion for {match_date} scheduled at 5 PM UK time.")
 
     except Exception as e:
