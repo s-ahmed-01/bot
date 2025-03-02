@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import pytz
 import re
 import json
+import functools
 
 # Load environment variables
 load_dotenv()
@@ -204,6 +205,10 @@ async def update_leaderboard():
                 def sort_key(user):
                     return (user_data[user]["total"], user_data[user]["weeks"].get(latest_week, 0))
 
+                def compare_with_previous_weeks(user1, user2):
+                    # Start comparison from the week before latest_week
+                    return compare_users(user1, user2, latest_week - 1)
+
                 sorted_users = sorted(user_data.keys(), key=sort_key, reverse=True)
                 print(f"sorted_users before tie-breaking: {sorted_users}")
 
@@ -217,8 +222,12 @@ async def update_leaderboard():
                         # There is a tie between sorted_users[i:j+1]
                         tied_users = sorted_users[i:j + 1]
                         print(f"Tie detected between users: {tied_users}")
-                        tied_users.sort(key=lambda user: compare_users(user, tied_users[0], latest_week - 1), reverse=True)
-                        sorted_users[i:j + 1] = tied_users
+                        try:
+                            # Sort tied users using previous weeks' scores
+                            tied_users.sort(key=functools.cmp_to_key(compare_with_previous_weeks), reverse=True)
+                            sorted_users[i:j + 1] = tied_users
+                        except Exception as e:
+                            print(f"Error during tie-breaking: {e}")
                     i = j + 1
 
                 print(f"sorted_users after tie-breaking: {sorted_users}")
