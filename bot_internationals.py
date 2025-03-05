@@ -613,8 +613,8 @@ async def on_reaction_add(reaction, user):
             current_stage = TOURNAMENT_STAGES[match_row[1]][1]  # Get stage number from match_week
             
             # Generate list of missed stages
+            missed_stages = []
             if latest_stage_value < current_stage_value:
-                missed_stages = []
                 for stage_value in range(latest_stage_value + 1, current_stage_value):
                     # Find the stage key (G/SF/F) for this value
                     stage_key = next((k for k, v in TOURNAMENT_STAGES.items() if v[1] == stage_value), None)
