@@ -178,9 +178,10 @@ async def update_leaderboard():
             for user_id, match_week, weekly_points in leaderboard_data:
                 if user_id not in leaderboard_dict:
                     leaderboard_dict[user_id] = {"stages": {}, "total": 0}
+                if match_week not in leaderboard_dict[user_id]["stages"]:
+                    leaderboard_dict[user_id]["stages"][match_week] = 0
                 leaderboard_dict[user_id]["stages"][match_week] = weekly_points
                 leaderboard_dict[user_id]["total"] += weekly_points
-                user_id_list.add(user_id)
 
             # Fetch usernames
             cursor.execute(f'''
@@ -289,7 +290,7 @@ async def update_leaderboard():
 
 @bot.command()
 @commands.check(is_mod_channel)
-async def schedule(ctx, match_date: str, match_type: str, match_week:str, team1: str, team2: str, winner_points: int = 0, scoreline_points:int = 0):
+async def schedule(ctx, match_date: str, match_type: str, match_week: str, team1: str, team2: str, winner_points: int = 0, scoreline_points:int = 0):
     """
     Schedule a match with a specific date.
     Args:
@@ -1106,7 +1107,7 @@ async def matches(ctx):
     await ctx.send(matches_message)
 
 @bot.command()
-async def predictions(ctx, user, match_week: int = None):
+async def predictions(ctx, match_week: int = None):
     """
     Shows a user's predictions for a specific match week.
     If no match_week is provided, it defaults to the latest match week the user has predicted for.
@@ -1168,7 +1169,7 @@ async def predictions(ctx, user, match_week: int = None):
 
         # Prepare the embed
         embed = discord.Embed(
-            title=f"<{user.mention}>, your Predictions for Match Week {match_week}",
+            title=f"<{ctx.author.mention}>, your Predictions for {match_week}",
             description="Here are your predictions for the selected match week.",
             color=discord.Color.blue()
         )
@@ -1261,7 +1262,7 @@ async def voting_summary(ctx, match_date: str):
                 vote_data = cursor.fetchall()
 
                 # Append match summary
-                summary_message += f"\n⚽ **Match:** {team1} vs {team2} ({match_type.upper()})\n"
+                summary_message += f"\n**Match:** {team1} vs {team2} ({match_type.upper()})\n"
                 if vote_data:
                     for pred_winner, pred_score, votes in vote_data:
                         summary_message += f" - {pred_winner} {pred_score}: {votes} vote(s)\n"
@@ -1290,14 +1291,14 @@ async def voting_summary(ctx, match_date: str):
                 ''', (question_id,))
                 bonus_vote_data = cursor.fetchall()
 
-                summary_message += f"\n❓ **Bonus Question:** {question}\n"
+                summary_message += f"\n **Bonus Question:** {question}\n"
                 if bonus_vote_data:
                     for answer, votes in bonus_vote_data:
                         summary_message += f" - {answer}: {votes} vote(s)\n"
                 else:
                     summary_message += "   No responses recorded for this question.\n"
         else:
-            summary_message += "\n⚠ No bonus questions found for this date.\n"
+            summary_message += "\nNo bonus questions found for this date.\n"
 
         await ctx.send(summary_message)
 
