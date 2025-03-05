@@ -604,17 +604,22 @@ async def on_reaction_add(reaction, user):
             ''', (user.id, user.id))
             latest_stage_row = cursor.fetchone()
             latest_stage = latest_stage_row[0] if latest_stage_row and latest_stage_row[0] is not None else 0
-            print(f"Latest stage for user: {latest_stage}")
+            latest_stage_value = TOURNAMENT_STAGES.get(latest_stage, [None, 0])[1] if latest_stage else 0
+            print(f"Latest stage for user: {latest_stage_value}")
+
+            current_stage_value = TOURNAMENT_STAGES[match_row[1]][1]  # Gets the numeric value (1 for 'G', 2 for 'SF', 3 for 'F')
             
             # Get the current match's stage
             current_stage = TOURNAMENT_STAGES[match_row[1]][1]  # Get stage number from match_week
             
             # Generate list of missed stages
-            missed_stages = []
-            if latest_stage < current_stage:
-                for stage_value in range(latest_stage + 1, current_stage):
-                    stage_key = [k for k, v in TOURNAMENT_STAGES.items() if v[1] == stage_value][0]
-                    missed_stages.append(stage_key)
+            if latest_stage_value < current_stage_value:
+                missed_stages = []
+                for stage_value in range(latest_stage_value + 1, current_stage_value):
+                    # Find the stage key (G/SF/F) for this value
+                    stage_key = next((k for k, v in TOURNAMENT_STAGES.items() if v[1] == stage_value), None)
+                    if stage_key:
+                        missed_stages.append(stage_key)
             
             print(f"Missed stages: {missed_stages}")
 
@@ -1118,7 +1123,11 @@ async def predictions(ctx, user, match_week: int = None):
                 SELECT DISTINCT match_week
                 FROM predictions
                 WHERE user_id = ?
-                ORDER BY match_week DESC
+                ORDER BY CASE match_week
+                    WHEN 'G' THEN 1
+                    WHEN 'SF' THEN 2
+                    WHEN 'F' THEN 3
+                END DESC
                 LIMIT 1
             ''', (user_id,))
             latest_week = cursor.fetchone()
@@ -1204,14 +1213,14 @@ async def reset_leaderboard(ctx):
     Reset the leaderboard and clear all points.
     """
     # Clear leaderboard data
-    cursor.execute('DELETE * FROM leaderboard')
+    cursor.execute('DELETE FROM leaderboard')
     conn.commit()
 
     # Reset points in predictions table
-    cursor.execute('DELETE * FROM predictions')
+    cursor.execute('DELETE FROM predictions')
     conn.commit()
 
-    cursor.execute('DELETE * FROM bonus_answers')
+    cursor.execute('DELETE FROM bonus_answers')
     conn.commit()
 
     await ctx.send("Leaderboard has been reset, and all points have been cleared!")
@@ -1401,7 +1410,7 @@ async def announce(ctx):
         overwrite.read_messages = True  # Remove @everyone access
         await poll_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
 
-        await ctx.send(f"📢 Announcement sent in {announcement_channel.mention}, and {poll_channel.mention} is now **closed**!")
+        await ctx.send(f"📢 Announcement sent in {announcement_channel.mention}, and {poll_channel.mention} is now **open**!")
 
     except Exception as e:
         await ctx.send(f"❌ Error: {e}")
