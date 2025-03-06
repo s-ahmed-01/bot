@@ -1383,6 +1383,7 @@ async def announce(ctx):
         source_channel = bot.get_channel(source_channel_id)
         announcement_channel_id = 800704760284971058
         announcement_channel = bot.get_channel(announcement_channel_id)
+        announcement_channel2 = bot.get_channel(381820768310263818)  # Add your second channel ID here
         # Fetch the last message from the source channel
         async for message in source_channel.history(limit=1):
             last_message = message
@@ -1395,6 +1396,7 @@ async def announce(ctx):
         embed = discord.Embed(description=last_message.content, color=discord.Color.green())
         embed.set_author(name=last_message.author.display_name, icon_url=last_message.author.avatar.url)
         await announcement_channel.send(embed=embed)
+        await announcement_channel2.send(embed=embed)
 
         # Close (make poll channel private)
         await poll_channel.set_permissions(ctx.guild.default_role, view_channel=True)
