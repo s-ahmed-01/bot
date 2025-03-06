@@ -1393,10 +1393,19 @@ async def announce(ctx):
             return
 
         # Send the last message to the announcement channel
-        embed = discord.Embed(description=last_message.content, color=discord.Color.green())
-        embed.set_author(name=last_message.author.display_name, icon_url=last_message.author.avatar.url)
-        await announcement_channel.send(embed=embed)
-        await announcement_channel2.send(embed=embed)
+        content = last_message.content
+        # Replace role mentions with plain text version
+        ping_less_content = re.sub(r'<@&(\d+)>', 
+            lambda m: f'@{ctx.guild.get_role(int(m.group(1))).name}' 
+            if ctx.guild.get_role(int(m.group(1))) else '@role', 
+            content)
+
+        # Send ping-less version to announcement channel
+        await announcement_channel.send(ping_less_content)
+        
+        # Send original version with ping to ping channel
+        await announcement_channel2.send(content)
+
 
         # Close (make poll channel private)
         await poll_channel.set_permissions(ctx.guild.default_role, view_channel=True)
