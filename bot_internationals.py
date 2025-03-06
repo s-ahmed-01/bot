@@ -1409,8 +1409,7 @@ async def announce(ctx):
         # Close (make poll channel private)
         overwrite = poll_channel.overwrites_for(ctx.guild.default_role)
         overwrite.read_messages = True  # Remove @everyone access
-        await poll_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
-
+        await poll_channel.set_permissions(ctx.guild.default_role, view_channel=True)
         await ctx.send(f"📢 Announcement sent in {announcement_channel.mention}, and {poll_channel.mention} is now **open**!")
 
     except Exception as e:
@@ -1426,10 +1425,7 @@ async def close_channel(ctx):
 
     try:
         # Make the channel private
-        overwrite = poll_channel.overwrites_for(ctx.guild.default_role)
-        overwrite.read_messages = False  # Remove @everyone access
-        await poll_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
-
+        await poll_channel.set_permissions(ctx.guild.default_role, view_channel=False)
         await ctx.send(f"🔒 {poll_channel.mention} is now **private**.")
 
     except Exception as e:
