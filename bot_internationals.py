@@ -132,20 +132,8 @@ TOURNAMENT_STAGES = {
     'F': ('Finals', 3)
 }
 
-poll_channel_id = 1346615134885253181  # Replace with actual channel IDs        
-poll_channel = bot.get_channel(poll_channel_id)
-source_channel_id = 1346615886848593985
-source_channel = bot.get_channel(source_channel_id)
-announcement_channel_id = 800704760284971058
-announcement_channel = bot.get_channel(announcement_channel_id)
-leaderboard_channel_id = 1346615199544905730
-leaderboard_channel = bot.get_channel(leaderboard_channel_id)
-admin_channel_id = 1346615169433997322
-admin_channel = bot.get_channel(admin_channel_id)
-bot_channel_id = 1346615855408091180  # Replace with your bot channel ID
-bot_channel = bot.get_channel(bot_channel_id)
-
 def is_mod_channel(ctx):
+    admin_channel_id = 1346615169433997322
     return ctx.channel.id == admin_channel_id
 
 # Event: Bot ready
@@ -156,6 +144,8 @@ async def on_ready():
 @bot.event
 async def update_leaderboard():
     try:
+        leaderboard_channel_id = 1346615199544905730
+        leaderboard_channel = bot.get_channel(leaderboard_channel_id)
         if not leaderboard_channel:
             print("Error: Leaderboard channel not found.")
             return
@@ -357,6 +347,10 @@ async def create_polls(ctx):
     Creates prediction polls in a public channel and result polls in some mod channel type thing.
     """
     try:
+        poll_channel_id = 1346615134885253181  # Replace with actual channel IDs        
+        poll_channel = bot.get_channel(poll_channel_id)
+        admin_channel_id = 1346615169433997322
+        admin_channel = bot.get_channel(admin_channel_id)
         # Fetch matches that have not had polls created yet
         cursor.execute('''
         SELECT id, match_date, match_type, team1, team2, winner_points, scoreline_points
@@ -1113,6 +1107,8 @@ async def predictions(ctx, match_week: int = None):
     """
     try:
         user_id = ctx.author.id
+        bot_channel_id = 1346615855408091180  # Replace with your bot channel ID
+        bot_channel = bot.get_channel(bot_channel_id)
 
         # If no match_week is provided, get the latest match week the user has predicted for
         if match_week is None:
@@ -1333,14 +1329,14 @@ async def delete_polls(match_date: str):
     match_date_with_year = match_date.replace(year=current_year.strftime("%Y-%m-%d"))
     try:
         # Fetch the channel IDs where the polls are located
-        poll_channel_id = 1343691622872911993  # Replace with actual channel IDs        
-        channel = bot.get_channel(poll_channel_id)
-        if channel is None:
+        poll_channel_id = 1346615134885253181  # Replace with actual channel IDs        
+        poll_channel = bot.get_channel(poll_channel_id)
+        if poll_channel is None:
             print(f"Channel with ID {poll_channel_id} not found.")
             return
 
         # Fetch all messages from the channel
-        async for message in channel.history(limit=200):  # Adjust the limit if needed
+        async for message in poll_channel.history(limit=200):  # Adjust the limit if needed
             if message.author == bot.user and message.embeds:
                 embed = message.embeds[0]  # Get the first embed
                 if embed.description and match_date_with_year in embed.description:
@@ -1382,6 +1378,12 @@ async def schedule_poll_deletion(ctx, match_date: str):
 async def announce(ctx):
     """Takes the last message from the source channel, posts it in the announcement channel, and closes the poll channel."""
     try:
+        poll_channel_id = 1346615134885253181  # Replace with actual channel IDs        
+        poll_channel = bot.get_channel(poll_channel_id)
+        source_channel_id = 1346615886848593985
+        source_channel = bot.get_channel(source_channel_id)
+        announcement_channel_id = 800704760284971058
+        announcement_channel = bot.get_channel(announcement_channel_id)
         # Fetch the last message from the source channel
         async for message in source_channel.history(limit=1):
             last_message = message
@@ -1410,6 +1412,8 @@ async def announce(ctx):
 async def close_channel(ctx):
     """Makes the poll channel private."""
     try:
+        poll_channel_id = 1346615134885253181  # Replace with actual channel IDs        
+        poll_channel = bot.get_channel(poll_channel_id)
         # Make the channel private
         await poll_channel.set_permissions(ctx.guild.default_role, view_channel=False)
         await ctx.send(f"🔒 {poll_channel.mention} is now **private**.")
