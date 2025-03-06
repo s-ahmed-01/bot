@@ -1397,8 +1397,6 @@ async def announce(ctx):
         await announcement_channel.send(embed=embed)
 
         # Close (make poll channel private)
-        overwrite = poll_channel.overwrites_for(ctx.guild.default_role)
-        overwrite.read_messages = True  # Remove @everyone access
         await poll_channel.set_permissions(ctx.guild.default_role, view_channel=True)
         await ctx.send(f"📢 Announcement sent in {announcement_channel.mention}, and {poll_channel.mention} is now **open**!")
 
