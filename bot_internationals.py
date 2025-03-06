@@ -1100,7 +1100,7 @@ async def matches(ctx):
     await ctx.send(matches_message)
 
 @bot.command()
-async def predictions(ctx, match_week: int = None):
+async def predictions(ctx, match_week: str = None):
     """
     Shows a user's predictions for a specific match week.
     If no match_week is provided, it defaults to the latest match week the user has predicted for.
@@ -1161,7 +1161,7 @@ async def predictions(ctx, match_week: int = None):
 
         # Prepare the embed
         embed = discord.Embed(
-            title=f"<{ctx.author.mention}>, your Predictions for {match_week}",
+            title=f"{ctx.author.mention}, your Predictions for {match_week}",
             description="Here are your predictions for the selected match week.",
             color=discord.Color.blue()
         )
@@ -1184,7 +1184,7 @@ async def predictions(ctx, match_week: int = None):
         if bonus_predictions:
             for date, question, answer, points in bonus_predictions:
                 if answer:
-                    answer_text = f"{answer} (Points: {points if points else 0})"
+                    answer_text = f"{json.loads(answer)} (Points: {points if points else 0})"
                 else:
                     answer_text = "No response given."
 
@@ -1373,7 +1373,6 @@ async def schedule_poll_deletion(ctx, match_date: str):
         await ctx.send(f"Error scheduling poll deletion: {e}")
 
 @bot.command()
-@commands.has_permissions(manage_channels=True)
 @commands.check(is_mod_channel)
 async def announce(ctx):
     """Takes the last message from the source channel, posts it in the announcement channel, and closes the poll channel."""
@@ -1407,7 +1406,6 @@ async def announce(ctx):
         await ctx.send(f"❌ Error: {e}")
 
 @bot.command()
-@commands.has_permissions(manage_channels=True)
 @commands.check(is_mod_channel)
 async def close_channel(ctx):
     """Makes the poll channel private."""
