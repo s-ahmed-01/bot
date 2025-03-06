@@ -132,11 +132,21 @@ TOURNAMENT_STAGES = {
     'F': ('Finals', 3)
 }
 
-announcement_channel = 1339790130478841906
+poll_channel_id = 1346615134885253181  # Replace with actual channel IDs        
+poll_channel = bot.get_channel(poll_channel_id)
+source_channel_id = 1346615886848593985
+source_channel = bot.get_channel(source_channel_id)
+announcement_channel_id = 800704760284971058
+announcement_channel = bot.get_channel(announcement_channel_id)
+leaderboard_channel_id = 1346615199544905730
+leaderboard_channel = bot.get_channel(leaderboard_channel_id)
+admin_channel_id = 1346615169433997322
+admin_channel = bot.get_channel(admin_channel_id)
+bot_channel_id = 1346615855408091180  # Replace with your bot channel ID
+bot_channel = bot.get_channel(bot_channel_id)
 
 def is_mod_channel(ctx):
-    allowed_channel = 1330957256505692325  # Replace with actual channel IDs
-    return ctx.channel.id == allowed_channel
+    return ctx.channel.id == admin_channel_id
 
 # Event: Bot ready
 @bot.event
@@ -146,9 +156,6 @@ async def on_ready():
 @bot.event
 async def update_leaderboard():
     try:
-        leaderboard_channel_id = 1336468081563930674
-        leaderboard_channel = bot.get_channel(leaderboard_channel_id)
-
         if not leaderboard_channel:
             print("Error: Leaderboard channel not found.")
             return
@@ -372,15 +379,7 @@ async def create_polls(ctx):
             await ctx.send("No matches or bonus questions without polls!")
             return
 
-        # Define Channel IDs
-        prediction_channel_id = 1343691622872911993   # Replace with Channel A ID
-        result_channel_id = 1330957256505692325   # Replace with Channel B ID
-
-        # Fetch channels
-        prediction_channel = bot.get_channel(prediction_channel_id)
-        result_channel = bot.get_channel(result_channel_id)
-
-        if not prediction_channel or not result_channel:
+        if not poll_channel or not admin_channel:
             await ctx.send("Error: One or both channels could not be found.")
             return
 
@@ -398,8 +397,8 @@ async def create_polls(ctx):
             if match_date != current_date:
                 current_date = match_date
                 formatted_date = current_date.strftime("%d/%m/%Y")
-                await prediction_channel.send(f"**{formatted_date} Games**")
-                await result_channel.send(f"**{formatted_date} Games**")
+                await poll_channel.send(f"**{formatted_date} Games**")
+                await admin_channel.send(f"**{formatted_date} Games**")
 
             # Generate score options based on match type
             if match_type == 'BO1':
@@ -416,7 +415,7 @@ async def create_polls(ctx):
                 reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']
 
             # Create prediction and result polls for the match
-            await create_match_poll(prediction_channel, result_channel, match_id, match_date, team1, team2, match_type, options, reactions, winner_points, scoreline_points)
+            await create_match_poll(poll_channel, admin_channel, match_id, match_date, team1, team2, match_type, options, reactions, winner_points, scoreline_points)
 
         # --- Create polls for bonus questions ---
         for question in bonus_questions:
@@ -432,11 +431,11 @@ async def create_polls(ctx):
             if match_date != current_date:
                 current_date = match_date
                 formatted_date = current_date.strftime("%d/%m/%Y")
-                await prediction_channel.send(f"**{formatted_date} Bonus Questions**")
-                await result_channel.send(f"**{formatted_date} Bonus Questions**")
+                await poll_channel.send(f"**{formatted_date} Bonus Questions**")
+                await admin_channel.send(f"**{formatted_date} Bonus Questions**")
 
             # Create prediction and result polls for the bonus question
-            await create_bonus_poll(prediction_channel, result_channel, question_id, question_text, description, option_split, reactions, point_value)
+            await create_bonus_poll(poll_channel, admin_channel, question_id, question_text, description, option_split, reactions, point_value)
 
         await ctx.send("Polls successfully created for all pending matches and bonus questions.")
 
@@ -1112,9 +1111,6 @@ async def predictions(ctx, match_week: int = None):
     Shows a user's predictions for a specific match week.
     If no match_week is provided, it defaults to the latest match week the user has predicted for.
     """
-    bot_channel_id = 1340519161453084783  # Replace with your bot channel ID
-    bot_channel = bot.get_channel(bot_channel_id)
-
     try:
         user_id = ctx.author.id
 
@@ -1385,13 +1381,6 @@ async def schedule_poll_deletion(ctx, match_date: str):
 @commands.check(is_mod_channel)
 async def announce(ctx):
     """Takes the last message from the source channel, posts it in the announcement channel, and closes the poll channel."""
-    poll_channel_id = 1343691622872911993  # Replace with actual channel IDs        
-    poll_channel = bot.get_channel(poll_channel_id)
-    source_channel_id = 1340087493135175794
-    source_channel = bot.get_channel(source_channel_id)
-    announcement_channel_id = 1339790130478841906
-    announcement_channel = bot.get_channel(announcement_channel_id)
-
     try:
         # Fetch the last message from the source channel
         async for message in source_channel.history(limit=1):
@@ -1420,9 +1409,6 @@ async def announce(ctx):
 @commands.check(is_mod_channel)
 async def close_channel(ctx):
     """Makes the poll channel private."""
-    poll_channel_id = 1343691622872911993  # Replace with actual channel IDs        
-    poll_channel = bot.get_channel(poll_channel_id)
-
     try:
         # Make the channel private
         await poll_channel.set_permissions(ctx.guild.default_role, view_channel=False)
