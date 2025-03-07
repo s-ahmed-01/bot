@@ -517,6 +517,7 @@ async def create_bonus_poll(prediction_channel, result_channel, question_id, que
 
 @bot.event
 async def on_reaction_add(reaction, user):
+    print("the bot has seen the reaction")
     bot_channel_id = 1346615855408091180  # Replace with your bot channel ID
     bot_channel = bot.get_channel(bot_channel_id)
     
