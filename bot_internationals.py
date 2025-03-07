@@ -517,6 +517,9 @@ async def create_bonus_poll(prediction_channel, result_channel, question_id, que
 
 @bot.event
 async def on_reaction_add(reaction, user):
+    bot_channel_id = 1346615855408091180  # Replace with your bot channel ID
+    bot_channel = bot.get_channel(bot_channel_id)
+    
     if user.id == bot.user.id:
         return  # Ignore reactions from this bot only
 
@@ -644,7 +647,7 @@ async def on_reaction_add(reaction, user):
             reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
 
             if str(reaction.emoji) not in reactions:
-                await message.channel.send("Invalid reaction. Please select a valid option.")
+                await bot_channel.send(f"{user.mention} Invalid reaction. Please select a valid option.")
                 return
 
             selected_index = reactions.index(str(reaction.emoji))
@@ -668,9 +671,20 @@ async def on_reaction_add(reaction, user):
             ''', (user.id, str(user.name)))  # Stores the current username
             conn.commit()
 
-            await message.channel.send(f"{user.name} your prediction has been logged: {pred_winner} with score {pred_score}.")
+            await bot_channel.send(f"{user.name} your prediction has been logged: {pred_winner} with score {pred_score}.")
 
         elif poll_type == "result_poll":
+            # Check if result already exists
+            cursor.execute('''
+            SELECT winner, score FROM matches
+            WHERE id = ? AND winner IS NOT NULL
+            ''', (match_id,))
+            existing_result = cursor.fetchone()
+            
+            if existing_result:
+                await message.channel.send("⚠️ Result has already been recorded for this match.")
+                return
+
             # Handle result poll
             options = [field.value for field in embed.fields]
             reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
@@ -811,7 +825,7 @@ async def on_reaction_add(reaction, user):
                 try:
                     selected_index = reactions.index(str(reaction.emoji))
                 except ValueError:
-                    await message.channel.send("Error: Invalid reaction. Please select a valid option.")
+                    await bot_channel.send(f"{user.mention} Invalid reaction. Please select a valid option.")
                     return
 
                 # Fetch existing answers
@@ -858,13 +872,11 @@ async def on_reaction_add(reaction, user):
                     ''', (user.id, str(user.name)))  # Stores the current username
                     conn.commit()
                 else:
-                    await message.channel.send("You have already selected an answer. Please remove one first if you wish to change your answer.")
+                    await bot_channel.send(f"{user.mention} You have already selected an answer. Please remove one first if you wish to change your answer.")
                     return
-                # Get the latest match week the user has participated in
                 
             except ValueError:
                 # Handle cases where the emoji is not in the reactions list
-                await message.channel.send("Error: Reaction not recognized. Please react with a valid emoji.")
                 return
 
 
@@ -1012,7 +1024,6 @@ async def on_reaction_remove(reaction, user):
         if selected_option in existing_answers:
             print("i got here :/)")
             existing_answers.remove(selected_option)
-            await message.channel.send(f"{selected_option} has been removed from your selection.")
             print(existing_answers)  # Remove selection
 
         updated_answers = json.dumps(existing_answers)
@@ -1024,6 +1035,33 @@ async def on_reaction_remove(reaction, user):
         WHERE user_id = ? AND question_id = ?
         ''', (updated_answers, user.id, question_id))
         conn.commit()
+
+    elif "Bonus Result" in title:
+    # Only proceed if we haven't awarded points yet
+        if str(reaction.emoji) != "✅":  # If not the finalize emoji
+            # Get question details
+            cursor.execute('''
+            SELECT correct_answer FROM bonus_questions
+            WHERE id = ?
+            ''', (question_id,))
+            answer_row = cursor.fetchone()
+
+            if answer_row and answer_row[0]:
+                correct_answers = set(json.loads(answer_row[0]))
+                # Map emoji to option
+                selected_option = dict(zip(reactions, option_split)).get(str(reaction.emoji))
+                
+                if selected_option and selected_option in correct_answers:
+                    correct_answers.remove(selected_option)
+                    # Update the database with new correct answers
+                    correct_answers_json = json.dumps(list(correct_answers))
+                    cursor.execute('''
+                    UPDATE bonus_questions
+                    SET correct_answer = ?
+                    WHERE id = ?
+                    ''', (correct_answers_json, question_id))
+                    conn.commit()
+                    await message.channel.send(f"✅ Removed {selected_option} from correct answers.")
     
     elif "Match Poll" in title:
         try:
@@ -1050,17 +1088,77 @@ async def on_reaction_remove(reaction, user):
 
             # Delete Prediction from Database
             cursor.execute('''
-            UPDATE predictions 
-            SET pred_winner = NULL, pred_score = NULL
+            DELETE FROM predictions
             WHERE match_id = ? AND user_id = ?
             ''', (match_id, user.id))
             conn.commit()
 
 
-            await message.channel.send(f"{user.mention}, your prediction has been removed.")
-
         except Exception as e:
             print(f"Error removing match prediction: {e}")
+    elif "Result Poll" in title:
+        try:
+            # Check if this is the message author removing their own result
+            if user.id != message.author.id:
+                return
+
+            # Get match details
+            cursor.execute('''
+            SELECT id, winner, score, match_week FROM matches
+            WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?
+            ''', (team1, team2, match_type, match_date))
+            match_data = cursor.fetchone()
+
+            if not match_data:
+                return
+
+            match_id, current_winner, current_score, match_week = match_data
+
+            if current_winner:  # Only proceed if there's a result to remove
+                # Start transaction
+                cursor.execute('BEGIN TRANSACTION')
+                try:
+                    # Get all predictions and their awarded points
+                    cursor.execute('''
+                    SELECT user_id, points 
+                    FROM predictions 
+                    WHERE match_id = ? AND points > 0
+                    ''', (match_id,))
+                    awarded_predictions = cursor.fetchall()
+
+                    # Remove points from predictions
+                    cursor.execute('''
+                    UPDATE predictions 
+                    SET points = 0 
+                    WHERE match_id = ?
+                    ''', (match_id,))
+
+                    # Remove points from leaderboard
+                    for user_id, points in awarded_predictions:
+                        cursor.execute('''
+                        UPDATE leaderboard 
+                        SET weekly_points = weekly_points - ? 
+                        WHERE user_id = ? AND match_week = ?
+                        ''', (points, user_id, match_week))
+
+                    # Clear the match result
+                    cursor.execute('''
+                    UPDATE matches 
+                    SET winner = NULL, score = NULL 
+                    WHERE id = ?
+                    ''', (match_id,))
+
+                    cursor.execute('COMMIT')
+                    await message.channel.send(f"Result for {team1} vs {team2} has been cleared and points have been removed.")
+                    await update_leaderboard()
+
+                except Exception as e:
+                    cursor.execute('ROLLBACK')
+                    await message.channel.send(f"Error removing match result: {e}")
+                    return
+
+        except Exception as e:
+            await message.channel.send(f"Error processing result removal: {e}")
     
 
 
@@ -1161,8 +1259,8 @@ async def predictions(ctx, match_week: str = None):
 
         # Prepare the embed
         embed = discord.Embed(
-            title=f"{ctx.author.mention}, your Predictions for {match_week}",
-            description="Here are your predictions for the selected match week.",
+            title=f"Predictions for {TOURNAMENT_STAGES[match_week][0]}",
+            description=f"{ctx.author.mention}, Here are your predictions for the selected match week.",
             color=discord.Color.blue()
         )
 
@@ -1285,12 +1383,21 @@ async def voting_summary(ctx, match_date: str):
 
                 summary_message += f"\n **Bonus Question:** {question}\n"
                 if bonus_vote_data:
-                    for answer, votes in bonus_vote_data:
-                        summary_message += f" - {answer}: {votes} vote(s)\n"
+                    option_votes = {}
+                    for answer_json, votes in bonus_vote_data:
+                        if answer_json:
+                            answers = json.loads(answer_json)
+                            # Count each selected option
+                            for answer in answers:
+                                option_votes[answer] = option_votes.get(answer, 0) + votes
+
+                # Sort and display votes
+                    for option, vote_count in sorted(option_votes.items(), key=lambda x: x[1], reverse=True):
+                        summary_message += f" - {option}: {vote_count} vote(s)\n"
                 else:
                     summary_message += "   No responses recorded for this question.\n"
-        else:
-            summary_message += "\nNo bonus questions found for this date.\n"
+            else:
+                summary_message += "\nNo bonus questions found for this date.\n"
 
         await ctx.send(summary_message)
 
@@ -1326,7 +1433,7 @@ async def delete_polls(match_date: str):
     """
     match_date = datetime.strptime(match_date, "%d-%m")      
     current_year = datetime.now().year
-    match_date_with_year = match_date.replace(year=current_year.strftime("%Y-%m-%d"))
+    match_date_with_year = match_date.replace(year=current_year).strftime("%Y-%m-%d")
     try:
         # Fetch the channel IDs where the polls are located
         poll_channel_id = 1346615134885253181  # Replace with actual channel IDs        
