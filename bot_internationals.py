@@ -10,6 +10,8 @@ import pytz
 import re
 import json
 import functools
+from PIL import Image, ImageDraw, ImageFont
+import io
 
 # Load environment variables
 load_dotenv()
@@ -517,6 +519,7 @@ async def create_bonus_poll(prediction_channel, result_channel, question_id, que
 
 @bot.event
 async def on_reaction_add(reaction, user):
+    
     print("the bot has seen the reaction")
     bot_channel_id = 1346615855408091180  # Replace with your bot channel ID
     bot_channel = bot.get_channel(bot_channel_id)
@@ -524,7 +527,18 @@ async def on_reaction_add(reaction, user):
     if user.id == bot.user.id:
         return  # Ignore reactions from this bot only
 
-    message = reaction.message
+    # Fetch the full message if not already cached
+    try:
+        message = reaction.message
+        if not message.embeds:
+            message = await message.channel.fetch_message(message.id)
+    except discord.NotFound:
+        return
+    except discord.Forbidden:
+        print("Bot doesn't have permission to fetch message")
+        return
+    except Exception as e:
+        print(f"Error fetching message: {e}")
 
     # Ensure the message has an embed
     if not message.embeds:
@@ -980,7 +994,20 @@ async def on_reaction_remove(reaction, user):
     if user.bot:
         return  # Ignore bot reactions
 
-    message = reaction.message
+    # Fetch the full message if not already cached
+    try:
+        message = reaction.message
+        if not message.embeds:
+            message = await message.channel.fetch_message(message.id)
+    except discord.NotFound:
+        return
+    except discord.Forbidden:
+        print("Bot doesn't have permission to fetch message")
+        return
+    except Exception as e:
+        print(f"Error fetching message: {e}")
+        return
+    
     if not message.embeds:
         return
 
@@ -1535,6 +1562,97 @@ async def close_channel(ctx):
 
     except Exception as e:
         await ctx.send(f"❌ Error: {e}")
+
+
+@bot.command()
+@commands.check(is_mod_channel)
+async def predictions_image(ctx, match_date: str):
+    """Creates an image showing all predictions for matches on a given date."""
+    try:
+        # Convert date format
+        match_date_obj = datetime.strptime(match_date, "%d-%m")
+        current_year = datetime.now().year
+        match_date_with_year = match_date_obj.replace(year=current_year).strftime("%Y-%m-%d")
+
+        # Get all matches for the date
+        cursor.execute('''
+        SELECT id, team1, team2, match_type
+        FROM matches
+        WHERE match_date = ?
+        ORDER BY id
+        ''', (match_date_with_year,))
+        matches = cursor.fetchall()
+
+        if not matches:
+            await ctx.send(f"No matches found for {match_date}")
+            return
+
+        # Create image
+        width = 800
+        header_height = 60
+        row_height = 30
+        total_rows = sum(1 for _ in matches)  # Count matches
+        height = header_height + (row_height * (total_rows + 1))  # +1 for headers
+
+        # Create image with white background
+        img = Image.new('RGB', (width, height), color='white')
+        draw = ImageDraw.Draw(img)
+        
+        try:
+            font = ImageFont.truetype("arial.ttf", 16)
+        except:
+            font = ImageFont.load_default()
+
+        # Draw header
+        draw.rectangle([0, 0, width, header_height], fill='lightblue')
+        draw.text((10, 20), f"Predictions for {match_date}", font=font, fill='black')
+
+        # Draw column headers
+        y = header_height
+        draw.text((10, y), "Username", font=font, fill='black')
+        x = 200
+        for match in matches:
+            draw.text((x, y), f"{match[1]} vs {match[2]}", font=font, fill='black')
+            x += 200
+
+        # Get and draw predictions
+        y += row_height
+        cursor.execute('''
+        SELECT DISTINCT users.username
+        FROM predictions
+        JOIN users ON predictions.user_id = users.user_id
+        WHERE match_id IN (SELECT id FROM matches WHERE match_date = ?)
+        ORDER BY users.username
+        ''', (match_date_with_year,))
+        users = cursor.fetchall()
+
+        for username, in users:
+            draw.text((10, y), username, font=font, fill='black')
+            x = 200
+            for match in matches:
+                cursor.execute('''
+                SELECT pred_winner, pred_score
+                FROM predictions
+                JOIN users ON predictions.user_id = users.user_id
+                WHERE match_id = ? AND users.username = ?
+                ''', (match[0], username))
+                pred = cursor.fetchone()
+                if pred:
+                    pred_text = f"{pred[0]} {pred[1]}"
+                else:
+                    pred_text = "No prediction"
+                draw.text((x, y), pred_text, font=font, fill='black')
+                x += 200
+            y += row_height
+
+        # Convert image to bytes
+        with io.BytesIO() as image_binary:
+            img.save(image_binary, 'PNG')
+            image_binary.seek(0)
+            await ctx.send(file=discord.File(fp=image_binary, filename='predictions.png'))
+
+    except Exception as e:
+        await ctx.send(f"Error creating predictions image: {e}")
 
 
 # Run bot
