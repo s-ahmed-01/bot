@@ -1607,18 +1607,21 @@ async def predictions_table(ctx, match_date: str):
         print(f"Found matches: {matches}")
 
         cursor.execute('''
-        SELECT DISTINCT users.username
-        FROM predictions
-        JOIN users ON predictions.user_id = users.user_id
-        WHERE match_id IN (SELECT id FROM matches WHERE match_date = ?)
-        ORDER BY users.username
+        SELECT DISTINCT u.username, 
+               COALESCE(SUM(l.weekly_points), 0) as total_points
+        FROM predictions p
+        JOIN users u ON p.user_id = u.user_id
+        LEFT JOIN leaderboard l ON u.user_id = l.user_id
+        WHERE p.match_id IN (SELECT id FROM matches WHERE match_date = ?)
+        GROUP BY u.username
+        ORDER BY total_points DESC
         ''', (match_date_with_year,))
         users = cursor.fetchall()
 
         # Create image
-        width = 800
+        width = 200 + (len(matches) * 150)  # Base width + space for each match
         header_height = 60
-        row_height = 30
+        row_height = 20
         total_rows = len(users)  # Count matches
         height = header_height + (row_height * (total_rows + 1))  # +1 for headers
         print(f"Image dimensions: {width}x{height}")
@@ -1639,19 +1642,21 @@ async def predictions_table(ctx, match_date: str):
         # Draw column headers
         y = header_height
         draw.text((10, y), "Username", font=font, fill='black')
-        x = 200
+        draw.text((110, y), "Points", font=font, fill='black')
+        x = 150
         for match in matches:
             draw.text((x, y), f"{match[1]} vs {match[2]}", font=font, fill='black')
-            x += 200
+            x += 150
 
         # Get and draw predictions
         y += row_height
 
         row_count = 0
-        for username, in users:
+        for username, total_points in users:
             print(f"Drawing row {row_count + 1}: {username}")
             draw.text((10, y), username, font=font, fill='black')
-            x = 200
+            draw.text((100, y), str(total_points), font=font, fill='black')
+            x = 150
             for match in matches:
                 cursor.execute('''
                 SELECT pred_winner, pred_score
@@ -1665,7 +1670,7 @@ async def predictions_table(ctx, match_date: str):
                 else:
                     pred_text = "No prediction"
                 draw.text((x, y), pred_text, font=font, fill='black')
-                x += 200
+                x += 150
             y += row_height
             row_count += 1
         print(f"Total rows drawn: {row_count}")
