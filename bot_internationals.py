@@ -1493,12 +1493,12 @@ async def schedule_poll_deletion(ctx, match_date: str):
         match_date_with_year = match_date_dt.replace(year=current_year)
 
         deletion_time_utc = uk_tz.localize(
-            datetime.combine(match_date_with_year, datetime.min.time()) + timedelta(hours=17)
+            datetime.combine(match_date_with_year, datetime.min.time()) + timedelta(hours=8)
         ).astimezone(pytz.utc)  # Convert to UTC for the scheduler
 
         # Schedule task
         scheduler.add_job(delete_polls, "date", run_date=deletion_time_utc, args=[match_date_with_year.strftime("%d-%m")])
-        await ctx.send(f"Poll deletion for {match_date} scheduled at 5 PM UK time.")
+        await ctx.send(f"Poll deletion for {match_date} scheduled at 8 AM UK time.")
 
     except Exception as e:
         await ctx.send(f"Error scheduling poll deletion: {e}")
@@ -1582,6 +1582,7 @@ async def predictions_image(ctx, match_date: str):
         if not matches:
             await ctx.send(f"No matches found for {match_date}")
             return
+        print(f"Found matches: {matches}")
 
         # Create image
         width = 800
@@ -1589,6 +1590,7 @@ async def predictions_image(ctx, match_date: str):
         row_height = 30
         total_rows = sum(1 for _ in matches)  # Count matches
         height = header_height + (row_height * (total_rows + 1))  # +1 for headers
+        print(f"Image dimensions: {width}x{height}")
 
         # Create image with white background
         img = Image.new('RGB', (width, height), color='white')
@@ -1622,7 +1624,9 @@ async def predictions_image(ctx, match_date: str):
         ''', (match_date_with_year,))
         users = cursor.fetchall()
 
+        row_count = 0
         for username, in users:
+            print(f"Drawing row {row_count + 1}: {username}")
             draw.text((10, y), username, font=font, fill='black')
             x = 200
             for match in matches:
@@ -1640,6 +1644,8 @@ async def predictions_image(ctx, match_date: str):
                 draw.text((x, y), pred_text, font=font, fill='black')
                 x += 200
             y += row_height
+            row_count += 1
+        print(f"Total rows drawn: {row_count}")
 
         # Convert image to bytes
         with io.BytesIO() as image_binary:
