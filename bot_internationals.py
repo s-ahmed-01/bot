@@ -1584,11 +1584,20 @@ async def predictions_image(ctx, match_date: str):
             return
         print(f"Found matches: {matches}")
 
+        cursor.execute('''
+        SELECT DISTINCT users.username
+        FROM predictions
+        JOIN users ON predictions.user_id = users.user_id
+        WHERE match_id IN (SELECT id FROM matches WHERE match_date = ?)
+        ORDER BY users.username
+        ''', (match_date_with_year,))
+        users = cursor.fetchall()
+
         # Create image
         width = 800
         header_height = 60
         row_height = 30
-        total_rows = sum(1 for _ in matches)  # Count matches
+        total_rows = len(users)  # Count matches
         height = header_height + (row_height * (total_rows + 1))  # +1 for headers
         print(f"Image dimensions: {width}x{height}")
 
@@ -1615,14 +1624,6 @@ async def predictions_image(ctx, match_date: str):
 
         # Get and draw predictions
         y += row_height
-        cursor.execute('''
-        SELECT DISTINCT users.username
-        FROM predictions
-        JOIN users ON predictions.user_id = users.user_id
-        WHERE match_id IN (SELECT id FROM matches WHERE match_date = ?)
-        ORDER BY users.username
-        ''', (match_date_with_year,))
-        users = cursor.fetchall()
 
         row_count = 0
         for username, in users:
