@@ -1108,12 +1108,33 @@ async def on_raw_reaction_remove(payload):
 
                 match_id = match_row[0]
 
-                # Delete Prediction from Database
-                cursor.execute('''
-                DELETE FROM predictions
-                WHERE match_id = ? AND user_id = ?
-                ''', (match_id, user.id))
-                conn.commit()
+                # Get the options and reactions for this match type
+                if match_type == 'BO1':
+                    options = [f"{team1} wins", f"{team2} wins"]
+                    reactions = ['1️⃣', '2️⃣']
+                elif match_type == 'BO3':
+                    options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
+                    reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣']
+                elif match_type == 'BO5':
+                    options = [
+                        f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
+                        f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
+                    ]
+                    reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']
+
+                # Get the prediction that corresponds to the removed reaction
+                if str(payload.emoji.name) in reactions:
+                    selected_index = reactions.index(str(payload.emoji.name))
+                    prediction = options[selected_index]
+                    pred_winner, pred_score = prediction.split(" ", 1)
+
+                    # Only delete if the stored prediction matches the removed reaction
+                    cursor.execute('''
+                    DELETE FROM predictions 
+                    WHERE match_id = ? AND user_id = ? 
+                    AND pred_winner = ? AND pred_score = ?
+                    ''', (match_id, user.id, pred_winner, pred_score))
+                    conn.commit()
 
 
             except Exception as e:
