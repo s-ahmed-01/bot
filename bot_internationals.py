@@ -1561,10 +1561,11 @@ async def close_channel(ctx):
 
 
 @bot.command()
-@commands.check(is_mod_channel)
-async def predictions_image(ctx, match_date: str):
+async def predictions_table(ctx, match_date: str):
     """Creates an image showing all predictions for matches on a given date."""
     try:
+        bot_channel_id = 1346615855408091180  # Replace with your bot channel ID
+        bot_channel = bot.get_channel(bot_channel_id)
         # Convert date format
         match_date_obj = datetime.strptime(match_date, "%d-%m")
         current_year = datetime.now().year
@@ -1652,10 +1653,67 @@ async def predictions_image(ctx, match_date: str):
         with io.BytesIO() as image_binary:
             img.save(image_binary, 'PNG')
             image_binary.seek(0)
-            await ctx.send(file=discord.File(fp=image_binary, filename='predictions.png'))
+            await bot_channel.send(file=discord.File(fp=image_binary, filename='predictions.png'))
 
     except Exception as e:
         await ctx.send(f"Error creating predictions image: {e}")
+
+@bot.command()
+@commands.check(is_mod_channel)
+async def add_prediction(ctx, username: str, match_date: str, team1: str, team2: str, pred_winner: str, pred_score: str):
+    """
+    Manually add a prediction for a user.
+    Usage: !add_prediction <username> <DD-MM> <team1> <team2> <predicted_winner> <predicted_score>
+    Example: !add_prediction "Player Name" 11-03 "Team1" "Team2" "Team1" "2-0"
+    """
+    try:
+        # Find user_id from username
+        cursor.execute('''
+        SELECT user_id FROM users 
+        WHERE username = ?
+        ''', (username,))
+        user_row = cursor.fetchone()
+
+        if not user_row:
+            await ctx.send(f"❌ No user found with username: {username}")
+            return
+
+        user_id = user_row[0]
+
+        # Convert date format
+        match_date_obj = datetime.strptime(match_date, "%d-%m")
+        current_year = datetime.now().year
+        match_date_with_year = match_date_obj.replace(year=current_year).strftime("%Y-%m-%d")
+
+        # Find the match
+        cursor.execute('''
+        SELECT id, match_week FROM matches 
+        WHERE team1 = ? AND team2 = ? AND match_date = ?
+        ''', (team1, team2, match_date_with_year))
+        match_data = cursor.fetchone()
+
+        if not match_data:
+            await ctx.send(f"❌ No match found for {team1} vs {team2} on {match_date}")
+            return
+
+        match_id, match_week = match_data
+
+        # Add the prediction
+        cursor.execute('''
+        INSERT INTO predictions (user_id, match_id, match_week, pred_winner, pred_score)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(user_id, match_id) DO UPDATE SET
+            pred_winner = excluded.pred_winner,
+            pred_score = excluded.pred_score
+        ''', (user_id, match_id, match_week, pred_winner, pred_score))
+
+        conn.commit()
+        await ctx.send(f"✅ Added prediction for {username}: {pred_winner} {pred_score} in {team1} vs {team2}")
+
+    except ValueError:
+        await ctx.send("❌ Invalid date format. Please use DD-MM.")
+    except Exception as e:
+        await ctx.send(f"❌ Error adding prediction: {e}")
 
 
 # Run bot
