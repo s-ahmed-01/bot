@@ -518,454 +518,235 @@ async def create_bonus_poll(prediction_channel, result_channel, question_id, que
 
 
 @bot.event
-async def on_reaction_add(reaction, user):
-    
-    print("the bot has seen the reaction")
-    bot_channel_id = 1346615855408091180  # Replace with your bot channel ID
-    bot_channel = bot.get_channel(bot_channel_id)
-    
-    if user.id == bot.user.id:
-        return  # Ignore reactions from this bot only
-
-    # Fetch the full message if not already cached
+async def on_raw_reaction_add(payload):
     try:
-        message = reaction.message
+        print("the bot has seen the reaction")
+        bot_channel_id = 1346615855408091180  # Replace with your bot channel ID
+        bot_channel = bot.get_channel(bot_channel_id)
+        
+        if payload.user_id == bot.user.id:
+            return
+
+        # Fetch the full message if not already cached
+
+        channel = bot.get_channel(payload.channel_id)
+        message = await channel.fetch_message(payload.message_id)
+        user = await bot.fetch_user(payload.user_id)
+            
         if not message.embeds:
-            message = await message.channel.fetch_message(message.id)
-    except discord.NotFound:
-        return
-    except discord.Forbidden:
-        print("Bot doesn't have permission to fetch message")
-        return
-    except Exception as e:
-        print(f"Error fetching message: {e}")
-
-    # Ensure the message has an embed
-    if not message.embeds:
-        return
-
-    embed = message.embeds[0]  # Get the first embed
-    title = embed.title  # Embed title (e.g., "Match Poll: TSM vs FTX (BO5)")
-    description = embed.description  # Message content for match date
-
-    # Parse poll type and match details from the title
-    if "Match Poll" in title:
-        poll_type = "match_poll"
-    elif "Result Poll" in title:
-        poll_type = "result_poll"
-    elif "Bonus Question Result" in title:
-        poll_type = "bonus_result"
-    elif "Bonus Question" in title:
-        poll_type = "bonus_poll"
-    else:
-        return  # Ignore unrelated embeds
-
-    if poll_type == "match_poll" or poll_type == "result_poll":
-        # Extract team names and match type from the title
-        try:
-            match_details = title.split(":")[1].strip()  # e.g., "TSM vs FTX (BO5)"
-            teams, match_type = match_details.rsplit("(", 1)
-            team1, team2 = [team.strip() for team in teams.split("vs")]
-            match_type = match_type.strip(")")
-            datestring = re.search(r"Match Date:\s*(\d{4}-\d{2}-\d{2})", description)
-        except ValueError:
-            await message.channel.send("Error parsing match details from poll.")
             return
-
-        # Extract match date (if needed, fallback to current date)
-        try:
-            if description:
-                match_date = datestring.group(1)  # Extracted date in YYYY-MM-DD format
-            else:
-                match_date = datetime.now().date().isoformat()  # Fallback to current date if no match found
-        except Exception:
-            await message.channel.send("Error parsing match date.")
-            return
-
-        # Locate the match in the database
-        cursor.execute('''
-        SELECT id, match_week, winner_points, scoreline_points FROM matches
-        WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?
-        ''', (team1, team2, match_type, match_date))
-        match_row = cursor.fetchone()
-
-        if not match_row:
-            await message.channel.send(f"No match found for {team1} vs {team2} ({match_type}) on {match_date}.")
-            return
-
-        match_id = match_row[0]  # Match ID in the database
-        scoreline_points = match_row[3]
-        winner_points = match_row[2]
-
-
-        # Determine which action to take based on poll type
-        if poll_type == "match_poll":
-            cursor.execute('''
-                SELECT match_week
-                FROM (
-                    SELECT match_week FROM predictions WHERE user_id = ?
-                    UNION
-                    SELECT match_week FROM bonus_answers WHERE user_id = ?
-                )
-                ORDER BY CASE match_week
-                    WHEN 'G' THEN 1
-                    WHEN 'SF' THEN 2
-                    WHEN 'F' THEN 3
-                END DESC
-                LIMIT 1
-            ''', (user.id, user.id))
-            latest_stage_row = cursor.fetchone()
-            latest_stage = latest_stage_row[0] if latest_stage_row and latest_stage_row[0] is not None else 0
-            latest_stage_value = TOURNAMENT_STAGES.get(latest_stage, [None, 0])[1] if latest_stage else 0
-            print(f"Latest stage for user: {latest_stage_value}")
-
-            current_stage_value = TOURNAMENT_STAGES[match_row[1]][1]  # Gets the numeric value (1 for 'G', 2 for 'SF', 3 for 'F')
             
-            # Get the current match's stage
-            current_stage = TOURNAMENT_STAGES[match_row[1]][1]  # Get stage number from match_week
-            
-            # Generate list of missed stages
-            missed_stages = []
-            if latest_stage_value < current_stage_value:
-                for stage_value in range(latest_stage_value + 1, current_stage_value):
-                    # Find the stage key (G/SF/F) for this value
-                    stage_key = next((k for k, v in TOURNAMENT_STAGES.items() if v[1] == stage_value), None)
-                    if stage_key:
-                        missed_stages.append(stage_key)
-            
-            print(f"Missed stages: {missed_stages}")
 
-            if missed_stages:
-                for stage in missed_stages:
-                    # Get the lowest total points for this stage (excluding The Coin)
-                    cursor.execute('''
-                        SELECT MIN(weekly_points) 
-                        FROM leaderboard 
-                        WHERE match_week = ? 
-                        AND user_id NOT IN (SELECT user_id FROM users WHERE username = 'The Coin')
-                    ''', (stage,))
-                    
-                    lowest_score_row = cursor.fetchone()
-                    lowest_score = lowest_score_row[0] if lowest_score_row and lowest_score_row[0] is not None else 0
+        # Ensure the message has an embed
 
-                    # Insert or update leaderboard entry
-                    cursor.execute('''
-                        INSERT INTO leaderboard (user_id, match_week, weekly_points)
-                        VALUES (?, ?, ?)
-                        ON CONFLICT(user_id, match_week) DO UPDATE SET 
-                            weekly_points = excluded.weekly_points
-                    ''', (user.id, stage, lowest_score))
-                    conn.commit()
-            
-            # Handle match poll (log predictions)
-            options = [field.value for field in embed.fields]
-            reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
+        embed = message.embeds[0]  # Get the first embed
+        title = embed.title  # Embed title (e.g., "Match Poll: TSM vs FTX (BO5)")
+        description = embed.description  # Message content for match date
 
-            if str(reaction.emoji) not in reactions:
-                await bot_channel.send(f"{user.mention} Invalid reaction. Please select a valid option.")
-                return
+        # Parse poll type and match details from the title
+        if "Match Poll" in title:
+            poll_type = "match_poll"
+        elif "Result Poll" in title:
+            poll_type = "result_poll"
+        elif "Bonus Question Result" in title:
+            poll_type = "bonus_result"
+        elif "Bonus Question" in title:
+            poll_type = "bonus_poll"
+        else:
+            return  # Ignore unrelated embeds
 
-            selected_index = reactions.index(str(reaction.emoji))
-            prediction = options[selected_index]
-            pred_winner, pred_score = prediction.split(" ", 1)
-
-            # Insert prediction into the database
-            cursor.execute('''
-            INSERT INTO predictions (match_id, match_week, user_id, pred_winner, pred_score, points)
-            VALUES (?, ?, ?, ?, ?, 0)
-            ON CONFLICT(match_id, user_id) DO UPDATE SET
-            pred_winner = excluded.pred_winner,
-            pred_score = excluded.pred_score
-            ''', (match_id, match_row[1], user.id, pred_winner, pred_score))
-            conn.commit()
-
-            cursor.execute('''
-            INSERT INTO users (user_id, username)
-            VALUES (?, ?)
-            ON CONFLICT(user_id) DO UPDATE SET username = excluded.username
-            ''', (user.id, str(user.name)))  # Stores the current username
-            conn.commit()
-
-            await bot_channel.send(f"{user.name} your prediction has been logged: {pred_winner} with score {pred_score}.")
-
-        elif poll_type == "result_poll":
-            # Check if result already exists
-            cursor.execute('''
-            SELECT winner, score FROM matches
-            WHERE id = ? AND winner IS NOT NULL
-            ''', (match_id,))
-            existing_result = cursor.fetchone()
-            
-            if existing_result:
-                await message.channel.send("⚠️ Result has already been recorded for this match.")
-                return
-
-            # Handle result poll
-            options = [field.value for field in embed.fields]
-            reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
-
-            if str(reaction.emoji) not in reactions:
-                await message.channel.send("Invalid reaction. Please select a valid option.")
-                return
-
-            selected_index = reactions.index(str(reaction.emoji))
-            result = options[selected_index]
-            winner, score = result.split(" ", 1)
-
-            # Update match result in the database
-            cursor.execute('''
-            UPDATE matches
-            SET winner = ?, score = ?
-            WHERE id = ?
-            ''', (winner, score, match_id))
-            conn.commit()
-
-            # Award points for correct predictions
-            cursor.execute('''
-            SELECT id, user_id, match_week, pred_winner, pred_score
-            FROM predictions
-            WHERE match_id = ?
-            ''', (match_id,))
-            predictions = cursor.fetchall()
-
-            for prediction in predictions:
-                pred_id, user_id, match_week, pred_winner, pred_score = prediction
-                points = 0
-
-                # Award points for correct winner
-                if pred_winner == winner:
-                    if match_row[2] != 0:
-                        points += match_row[2] 
-                    else:
-                        points += 1 if match_type == "BO1" else (2 if match_type == "BO3" else 3)
-
-                    # Bonus points for correct score
-                    if pred_score == score:
-                        if match_row[3] != 0:
-                            points += match_row[3]
-                        else:
-                            points += 1 if match_type == "BO3" else (2 if match_type == "BO5" else 0)
-
-                # Update points in the predictions table
-                cursor.execute('''
-                UPDATE predictions
-                SET points = points + ?
-                WHERE id = ?
-                ''', (points, pred_id))
-
-                cursor.execute('''
-                INSERT INTO leaderboard (user_id, match_week, weekly_points)
-                VALUES (?, ?, ?)
-                ON CONFLICT(user_id, match_week) DO UPDATE SET
-                    weekly_points = leaderboard.weekly_points + ?
-                ''', (user_id, match_week, points, points))
-                conn.commit()
-
-            conn.commit()
-
-            await update_leaderboard()
-
-            await message.channel.send(
-                f"Result recorded for match {team1} vs {team2} ({match_type}): {winner} wins with score {score}! Points have been awarded."
-            )
-    elif poll_type == "bonus_poll" or poll_type == "bonus_result":
-        # Locate the question in the database
-        question_text = title.split(":")[1].strip()  # Extract question text
-        cursor.execute('''
-        SELECT id, match_week, options, required_answers, points FROM bonus_questions
-        WHERE question = ?
-        ORDER BY id DESC LIMIT 1
-        ''', (question_text,))
-        question_row = cursor.fetchone()
-
-        if not question_row:
-            await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
-            return
-
-        question_id, week, options, required_answers, points_value = question_row
-        option_split = [option.strip() for option in options.split(",")]
-        reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
-
-        if str(reaction.emoji) not in reactions:
-            await message.channel.send("Invalid reaction. Please select a valid option.")
-            return
-
-        if poll_type == "bonus_poll":
-            cursor.execute('''
-                SELECT MAX(match_week) FROM (
-                    SELECT match_week FROM predictions WHERE user_id = ?
-                    UNION
-                    SELECT match_week FROM bonus_answers WHERE user_id = ?
-                )
-            ''', (user.id, user.id))
-            latest_week = cursor.fetchone()[0] or 0
-            print(latest_week)
-            
-            if latest_week is None:
-                latest_week = 0  # No previous activity
-
-            # Find all missed weeks between the latest activity and current match week
-            missed_weeks = list(range(latest_week + 1, match_row[1]))
-            print(f"all_weeks: {missed_weeks}")
-
-            if missed_weeks:
-                for week in missed_weeks:
-                    # Get the lowest total points for this match week (excluding The Coin)
-                    cursor.execute('''
-                        SELECT MIN(weekly_points) 
-                        FROM leaderboard 
-                        WHERE match_week = ? 
-                        AND user_id NOT IN (SELECT user_id FROM users WHERE username = 'The Coin')
-                    ''', (week,))
-                    
-                    lowest_score_row = cursor.fetchone()
-                    print(lowest_score_row)
-                    lowest_score = lowest_score_row[0] if lowest_score_row else 0  # Ensure no NoneType error
-
-                    # Insert or update leaderboard entry
-                    cursor.execute('''
-                        INSERT INTO leaderboard (user_id, match_week, weekly_points)
-                        VALUES (?, ?, ?)
-                        ON CONFLICT(user_id, match_week) DO UPDATE SET 
-                            weekly_points = excluded.weekly_points
-                    ''', (user.id, week, lowest_score))
-                    conn.commit()
-            
-            # Log reactions and options to debug
-            print(f"Reactions: {reactions}")
-            print(f"Options: {options}")
-
+        if poll_type == "match_poll" or poll_type == "result_poll":
+            # Extract team names and match type from the title
             try:
-                # Ensure reactions are aligned with options
-                try:
-                    selected_index = reactions.index(str(reaction.emoji))
-                except ValueError:
+                match_details = title.split(":")[1].strip()  # e.g., "TSM vs FTX (BO5)"
+                teams, match_type = match_details.rsplit("(", 1)
+                team1, team2 = [team.strip() for team in teams.split("vs")]
+                match_type = match_type.strip(")")
+                datestring = re.search(r"Match Date:\s*(\d{4}-\d{2}-\d{2})", description)
+            except ValueError:
+                await message.channel.send("Error parsing match details from poll.")
+                return
+
+            # Extract match date (if needed, fallback to current date)
+            try:
+                if description:
+                    match_date = datestring.group(1)  # Extracted date in YYYY-MM-DD format
+                else:
+                    match_date = datetime.now().date().isoformat()  # Fallback to current date if no match found
+            except Exception:
+                await message.channel.send("Error parsing match date.")
+                return
+
+            # Locate the match in the database
+            cursor.execute('''
+            SELECT id, match_week, winner_points, scoreline_points FROM matches
+            WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?
+            ''', (team1, team2, match_type, match_date))
+            match_row = cursor.fetchone()
+
+            if not match_row:
+                await message.channel.send(f"No match found for {team1} vs {team2} ({match_type}) on {match_date}.")
+                return
+
+            match_id = match_row[0]  # Match ID in the database
+            scoreline_points = match_row[3]
+            winner_points = match_row[2]
+
+
+            # Determine which action to take based on poll type
+            if poll_type == "match_poll":
+                cursor.execute('''
+                    SELECT match_week
+                    FROM (
+                        SELECT match_week FROM predictions WHERE user_id = ?
+                        UNION
+                        SELECT match_week FROM bonus_answers WHERE user_id = ?
+                    )
+                    ORDER BY CASE match_week
+                        WHEN 'G' THEN 1
+                        WHEN 'SF' THEN 2
+                        WHEN 'F' THEN 3
+                    END DESC
+                    LIMIT 1
+                ''', (user.id, user.id))
+                latest_stage_row = cursor.fetchone()
+                latest_stage = latest_stage_row[0] if latest_stage_row and latest_stage_row[0] is not None else 0
+                latest_stage_value = TOURNAMENT_STAGES.get(latest_stage, [None, 0])[1] if latest_stage else 0
+                print(f"Latest stage for user: {latest_stage_value}")
+
+                current_stage_value = TOURNAMENT_STAGES[match_row[1]][1]  # Gets the numeric value (1 for 'G', 2 for 'SF', 3 for 'F')
+                
+                # Get the current match's stage
+                current_stage = TOURNAMENT_STAGES[match_row[1]][1]  # Get stage number from match_week
+                
+                # Generate list of missed stages
+                missed_stages = []
+                if latest_stage_value < current_stage_value:
+                    for stage_value in range(latest_stage_value + 1, current_stage_value):
+                        # Find the stage key (G/SF/F) for this value
+                        stage_key = next((k for k, v in TOURNAMENT_STAGES.items() if v[1] == stage_value), None)
+                        if stage_key:
+                            missed_stages.append(stage_key)
+                
+                print(f"Missed stages: {missed_stages}")
+
+                if missed_stages:
+                    for stage in missed_stages:
+                        # Get the lowest total points for this stage (excluding The Coin)
+                        cursor.execute('''
+                            SELECT MIN(weekly_points) 
+                            FROM leaderboard 
+                            WHERE match_week = ? 
+                            AND user_id NOT IN (SELECT user_id FROM users WHERE username = 'The Coin')
+                        ''', (stage,))
+                        
+                        lowest_score_row = cursor.fetchone()
+                        lowest_score = lowest_score_row[0] if lowest_score_row and lowest_score_row[0] is not None else 0
+
+                        # Insert or update leaderboard entry
+                        cursor.execute('''
+                            INSERT INTO leaderboard (user_id, match_week, weekly_points)
+                            VALUES (?, ?, ?)
+                            ON CONFLICT(user_id, match_week) DO UPDATE SET 
+                                weekly_points = excluded.weekly_points
+                        ''', (user.id, stage, lowest_score))
+                        conn.commit()
+                
+                # Handle match poll (log predictions)
+                options = [field.value for field in embed.fields]
+                reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
+
+                if str(payload.emoji.name) not in reactions:
                     await bot_channel.send(f"{user.mention} Invalid reaction. Please select a valid option.")
                     return
 
-                # Fetch existing answers
+                selected_index = reactions.index(str(payload.emoji.name))
+                prediction = options[selected_index]
+                pred_winner, pred_score = prediction.split(" ", 1)
+
+                # Insert prediction into the database
                 cursor.execute('''
-                SELECT answer FROM bonus_answers WHERE user_id = ? AND question_id = ?
-                ''', (user.id, question_id))
-                existing_answer_row = cursor.fetchone()
-                print(existing_answer_row)
-
-                if existing_answer_row:
-                    try:
-                        existing_answers = json.loads(existing_answer_row[0])  # Parse JSON
-                        if not isinstance(existing_answers, list):  # Ensure it's a list
-                            existing_answers = []
-                    except json.JSONDecodeError:
-                        existing_answers = []  # Reset if data is corrupted
-                else:
-                    existing_answers = []  # First-time user, initialize empty list
-
-                print(existing_answers)
-
-                if len(existing_answers) < required_answers:
-                    # Map emoji to actual option
-                    selected_index = reactions.index(str(reaction.emoji))
-                    selected_option = option_split[selected_index]
-
-                    if selected_option not in existing_answers:
-                        existing_answers.append(selected_option)  # Add selection
-
-
-                    updated_answers = json.dumps(existing_answers)
-
-                    cursor.execute('''
-                    INSERT INTO bonus_answers (user_id, question_id, answer, match_week)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(user_id, question_id) DO UPDATE SET answer = excluded.answer
-                    ''', (user.id, question_id, updated_answers, question_row[1]))
-                    conn.commit()
-                    
-                    cursor.execute('''
-                    INSERT INTO users (user_id, username)
-                    VALUES (?, ?)
-                    ON CONFLICT(user_id) DO UPDATE SET username = excluded.username
-                    ''', (user.id, str(user.name)))  # Stores the current username
-                    conn.commit()
-                else:
-                    await bot_channel.send(f"{user.mention} You have already selected an answer. Please remove one first if you wish to change your answer.")
-                    return
-                
-            except ValueError:
-                # Handle cases where the emoji is not in the reactions list
-                return
-
-
-        elif poll_type == "bonus_result":
-            cursor.execute('''
-            SELECT correct_answer FROM bonus_questions
-            WHERE question = ?
-            ORDER BY id DESC LIMIT 1
-            ''', (question_text,))
-            answer_row = cursor.fetchone()
-            
-            if not question_row:
-                await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
-                return
-
-            if answer_row and answer_row[0]:  # Ensure it is not None or empty
-                try:
-                    correct_answers = set(json.loads(answer_row[0]))  # Parse stored JSON
-                except json.JSONDecodeError:
-                    print(f"Error parsing JSON from DB: {answer_row[0]}")  # Debugging
-                    correct_answers = set()
-            else:
-                correct_answers = set()  # Initialize as empty if no value is stored
-
-            user_input = dict(zip(reactions, option_split)).get(str(reaction.emoji), None)
-
-            if user_input:
-                correct_answers.add(user_input)  # Add selection
-
-                correct_answers_json = json.dumps(list(correct_answers))
-                cursor.execute('''
-                UPDATE bonus_questions
-                SET correct_answer = ?
-                WHERE id = ?
-                ''', (correct_answers_json, question_id))
+                INSERT INTO predictions (match_id, match_week, user_id, pred_winner, pred_score, points)
+                VALUES (?, ?, ?, ?, ?, 0)
+                ON CONFLICT(match_id, user_id) DO UPDATE SET
+                pred_winner = excluded.pred_winner,
+                pred_score = excluded.pred_score
+                ''', (match_id, match_row[1], user.id, pred_winner, pred_score))
                 conn.commit()
-                await message.channel.send(f"✅ The correct answer for '{question_text}' has been recorded.")
-                return
 
-            if str(reaction.emoji) == "✅":  # Change this emoji to whatever you prefer
-                await message.channel.send(f"✅ Correct answer selection finalized! Checking responses...")
-
-                # Fetch user responses
                 cursor.execute('''
-                SELECT user_id, answer FROM bonus_answers
-                WHERE question_id = ?
-                ''', (question_id,))
-                user_responses = cursor.fetchall()
+                INSERT INTO users (user_id, username)
+                VALUES (?, ?)
+                ON CONFLICT(user_id) DO UPDATE SET username = excluded.username
+                ''', (user.id, str(user.name)))  # Stores the current username
+                conn.commit()
 
-                if not user_responses:
-                    await message.channel.send("Error: No user responses found for this bonus question.")
+                await bot_channel.send(f"{user.name} your prediction has been logged: {pred_winner} with score {pred_score}.")
+
+            elif poll_type == "result_poll":
+                # Check if result already exists
+                cursor.execute('''
+                SELECT winner, score FROM matches
+                WHERE id = ? AND winner IS NOT NULL
+                ''', (match_id,))
+                existing_result = cursor.fetchone()
+                
+                if existing_result:
+                    await message.channel.send("⚠️ Result has already been recorded for this match.")
                     return
 
-                awarded_users = []
-                for user_id, user_selections_json in user_responses:
-                    user_selections = set(json.loads(user_selections_json))  # Convert user answers
+                # Handle result poll
+                options = [field.value for field in embed.fields]
+                reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
 
-                    if len(correct_answers) > required_answers:
-                        # If only one answer is expected, allow any one correct answer
-                        if user_selections.issubset(correct_answers):  # Intersection (checks if at least one is correct)
-                            points_awarded = points_value  # Full points for selecting at least one
+                if str(payload.emoji.name) not in reactions:
+                    await message.channel.send("Invalid reaction. Please select a valid option.")
+                    return
+
+                selected_index = reactions.index(str(payload.emoji.name))
+                result = options[selected_index]
+                winner, score = result.split(" ", 1)
+
+                # Update match result in the database
+                cursor.execute('''
+                UPDATE matches
+                SET winner = ?, score = ?
+                WHERE id = ?
+                ''', (winner, score, match_id))
+                conn.commit()
+
+                # Award points for correct predictions
+                cursor.execute('''
+                SELECT id, user_id, match_week, pred_winner, pred_score
+                FROM predictions
+                WHERE match_id = ?
+                ''', (match_id,))
+                predictions = cursor.fetchall()
+
+                for prediction in predictions:
+                    pred_id, user_id, match_week, pred_winner, pred_score = prediction
+                    points = 0
+
+                    # Award points for correct winner
+                    if pred_winner == winner:
+                        if match_row[2] != 0:
+                            points += match_row[2] 
                         else:
-                            points_awarded = 0  # No points if none were correct
-                    else:
-                        # Default behavior: Require an exact match of all correct answers
-                        points_awarded = points_value if user_selections == correct_answers else 0
+                            points += 1 if match_type == "BO1" else (2 if match_type == "BO3" else 3)
 
-                    # Award points
+                        # Bonus points for correct score
+                        if pred_score == score:
+                            if match_row[3] != 0:
+                                points += match_row[3]
+                            else:
+                                points += 1 if match_type == "BO3" else (2 if match_type == "BO5" else 0)
+
+                    # Update points in the predictions table
                     cursor.execute('''
-                    UPDATE bonus_answers
-                    SET points = ?
-                    WHERE question_id = ? AND user_id = ?
-                    ''', (points_awarded, question_id, user_id))
-                    conn.commit()
+                    UPDATE predictions
+                    SET points = points + ?
+                    WHERE id = ?
+                    ''', (points, pred_id))
 
                     cursor.execute('''
                     INSERT INTO leaderboard (user_id, match_week, weekly_points)
@@ -975,113 +756,166 @@ async def on_reaction_add(reaction, user):
                     ''', (user_id, match_week, points, points))
                     conn.commit()
 
-                    if points_awarded > 0:
-                        awarded_users.append(user_id)
-
-                # --- **Send Final Result Message** ---
-                correct_answer_text = ", ".join(correct_answers)
-                if awarded_users:
-                    awarded_mentions = ", ".join([f"<@{user_id}>" for user_id in awarded_users])
-                    await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answer_text}. Users awarded: {awarded_mentions}")
-                else:
-                    await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answer_text}.")
+                conn.commit()
 
                 await update_leaderboard()
 
-@bot.event
-async def on_reaction_remove(reaction, user):
-    print("hi")
-    if user.bot:
-        return  # Ignore bot reactions
-
-    # Fetch the full message if not already cached
-    try:
-        message = reaction.message
-        if not message.embeds:
-            message = await message.channel.fetch_message(message.id)
-    except discord.NotFound:
-        return
-    except discord.Forbidden:
-        print("Bot doesn't have permission to fetch message")
-        return
-    except Exception as e:
-        print(f"Error fetching message: {e}")
-        return
-    
-    if not message.embeds:
-        return
-
-    embed = message.embeds[0]
-    title = embed.title
-
-    if "Bonus Question" in title:
-        question_text = title.split(":")[1].strip()
-
-        cursor.execute('''
-        SELECT id, options FROM bonus_questions
-        WHERE question = ?
-        ''', (question_text,))
-        question_row = cursor.fetchone()
-
-        if not question_row:
-            return
-
-        question_id, options = question_row
-        option_split = [option.strip() for option in options.split(",")]
-        reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
-
-        if str(reaction.emoji) not in reactions:
-            return
-
-        # Fetch existing answers
-        cursor.execute('''
-        SELECT answer FROM bonus_answers WHERE user_id = ? AND question_id = ?
-        ''', (user.id, question_id))
-        existing_answer_row = cursor.fetchone()
-
-        if existing_answer_row and existing_answer_row[0]:
-            existing_answers = json.loads(existing_answer_row[0])
-            print(existing_answers)
-        else:
-            return  # Nothing to remove
-
-        # Map emoji to actual option
-        selected_index = reactions.index(str(reaction.emoji))
-        selected_option = option_split[selected_index]
-
-        if selected_option in existing_answers:
-            print("i got here :/)")
-            existing_answers.remove(selected_option)
-            print(existing_answers)  # Remove selection
-
-        updated_answers = json.dumps(existing_answers)
-
-        # Update the database
-        cursor.execute('''
-        UPDATE bonus_answers
-        SET answer = ?
-        WHERE user_id = ? AND question_id = ?
-        ''', (updated_answers, user.id, question_id))
-        conn.commit()
-
-    elif "Bonus Result" in title:
-    # Only proceed if we haven't awarded points yet
-        if str(reaction.emoji) != "✅":  # If not the finalize emoji
-            # Get question details
+                await message.channel.send(
+                    f"Result recorded for match {team1} vs {team2} ({match_type}): {winner} wins with score {score}! Points have been awarded."
+                )
+        elif poll_type == "bonus_poll" or poll_type == "bonus_result":
+            # Locate the question in the database
+            question_text = title.split(":")[1].strip()  # Extract question text
             cursor.execute('''
-            SELECT correct_answer FROM bonus_questions
-            WHERE id = ?
-            ''', (question_id,))
-            answer_row = cursor.fetchone()
+            SELECT id, match_week, options, required_answers, points FROM bonus_questions
+            WHERE question = ?
+            ORDER BY id DESC LIMIT 1
+            ''', (question_text,))
+            question_row = cursor.fetchone()
 
-            if answer_row and answer_row[0]:
-                correct_answers = set(json.loads(answer_row[0]))
-                # Map emoji to option
-                selected_option = dict(zip(reactions, option_split)).get(str(reaction.emoji))
+            if not question_row:
+                await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
+                return
+
+            question_id, week, options, required_answers, points_value = question_row
+            option_split = [option.strip() for option in options.split(",")]
+            reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
+
+            if str(payload.emoji.name) not in reactions:
+                await message.channel.send("Invalid reaction. Please select a valid option.")
+                return
+
+            if poll_type == "bonus_poll":
+                cursor.execute('''
+                    SELECT MAX(match_week) FROM (
+                        SELECT match_week FROM predictions WHERE user_id = ?
+                        UNION
+                        SELECT match_week FROM bonus_answers WHERE user_id = ?
+                    )
+                ''', (user.id, user.id))
+                latest_week = cursor.fetchone()[0] or 0
+                print(latest_week)
                 
-                if selected_option and selected_option in correct_answers:
-                    correct_answers.remove(selected_option)
-                    # Update the database with new correct answers
+                if latest_week is None:
+                    latest_week = 0  # No previous activity
+
+                # Find all missed weeks between the latest activity and current match week
+                missed_weeks = list(range(latest_week + 1, match_row[1]))
+                print(f"all_weeks: {missed_weeks}")
+
+                if missed_weeks:
+                    for week in missed_weeks:
+                        # Get the lowest total points for this match week (excluding The Coin)
+                        cursor.execute('''
+                            SELECT MIN(weekly_points) 
+                            FROM leaderboard 
+                            WHERE match_week = ? 
+                            AND user_id NOT IN (SELECT user_id FROM users WHERE username = 'The Coin')
+                        ''', (week,))
+                        
+                        lowest_score_row = cursor.fetchone()
+                        print(lowest_score_row)
+                        lowest_score = lowest_score_row[0] if lowest_score_row else 0  # Ensure no NoneType error
+
+                        # Insert or update leaderboard entry
+                        cursor.execute('''
+                            INSERT INTO leaderboard (user_id, match_week, weekly_points)
+                            VALUES (?, ?, ?)
+                            ON CONFLICT(user_id, match_week) DO UPDATE SET 
+                                weekly_points = excluded.weekly_points
+                        ''', (user.id, week, lowest_score))
+                        conn.commit()
+                
+                # Log reactions and options to debug
+                print(f"Reactions: {reactions}")
+                print(f"Options: {options}")
+
+                try:
+                    # Ensure reactions are aligned with options
+                    try:
+                        selected_index = reactions.index(str(payload.emoji.name))
+                    except ValueError:
+                        await bot_channel.send(f"{user.mention} Invalid reaction. Please select a valid option.")
+                        return
+
+                    # Fetch existing answers
+                    cursor.execute('''
+                    SELECT answer FROM bonus_answers WHERE user_id = ? AND question_id = ?
+                    ''', (user.id, question_id))
+                    existing_answer_row = cursor.fetchone()
+                    print(existing_answer_row)
+
+                    if existing_answer_row:
+                        try:
+                            existing_answers = json.loads(existing_answer_row[0])  # Parse JSON
+                            if not isinstance(existing_answers, list):  # Ensure it's a list
+                                existing_answers = []
+                        except json.JSONDecodeError:
+                            existing_answers = []  # Reset if data is corrupted
+                    else:
+                        existing_answers = []  # First-time user, initialize empty list
+
+                    print(existing_answers)
+
+                    if len(existing_answers) < required_answers:
+                        # Map emoji to actual option
+                        selected_index = reactions.index(str(payload.emoji.name))
+                        selected_option = option_split[selected_index]
+
+                        if selected_option not in existing_answers:
+                            existing_answers.append(selected_option)  # Add selection
+
+
+                        updated_answers = json.dumps(existing_answers)
+
+                        cursor.execute('''
+                        INSERT INTO bonus_answers (user_id, question_id, answer, match_week)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(user_id, question_id) DO UPDATE SET answer = excluded.answer
+                        ''', (user.id, question_id, updated_answers, question_row[1]))
+                        conn.commit()
+                        
+                        cursor.execute('''
+                        INSERT INTO users (user_id, username)
+                        VALUES (?, ?)
+                        ON CONFLICT(user_id) DO UPDATE SET username = excluded.username
+                        ''', (user.id, str(user.name)))  # Stores the current username
+                        conn.commit()
+                    else:
+                        await bot_channel.send(f"{user.mention} You have already selected an answer. Please remove one first if you wish to change your answer.")
+                        return
+                    
+                except ValueError:
+                    # Handle cases where the emoji is not in the reactions list
+                    return
+
+
+            elif poll_type == "bonus_result":
+                cursor.execute('''
+                SELECT correct_answer FROM bonus_questions
+                WHERE question = ?
+                ORDER BY id DESC LIMIT 1
+                ''', (question_text,))
+                answer_row = cursor.fetchone()
+                
+                if not question_row:
+                    await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
+                    return
+
+                if answer_row and answer_row[0]:  # Ensure it is not None or empty
+                    try:
+                        correct_answers = set(json.loads(answer_row[0]))  # Parse stored JSON
+                    except json.JSONDecodeError:
+                        print(f"Error parsing JSON from DB: {answer_row[0]}")  # Debugging
+                        correct_answers = set()
+                else:
+                    correct_answers = set()  # Initialize as empty if no value is stored
+
+                user_input = dict(zip(reactions, option_split)).get(str(payload.emoji.name), None)
+
+                if user_input:
+                    correct_answers.add(user_input)  # Add selection
+
                     correct_answers_json = json.dumps(list(correct_answers))
                     cursor.execute('''
                     UPDATE bonus_questions
@@ -1089,104 +923,266 @@ async def on_reaction_remove(reaction, user):
                     WHERE id = ?
                     ''', (correct_answers_json, question_id))
                     conn.commit()
-                    await message.channel.send(f"✅ Removed {selected_option} from correct answers.")
-    
-    elif "Match Poll" in title:
-        try:
-            match_details = title.split(":")[1].strip()  # Extract teams and match type
-            teams, match_type = match_details.rsplit("(", 1)
-            team1, team2 = [team.strip() for team in teams.split("vs")]
-            match_type = match_type.strip(")")
-
-            # Extract Match Date
-            match_date_line = embed.description.split("\n")[0]  # "Match Date: YYYY-MM-DD"
-            match_date = match_date_line.replace("Match Date: ", "").strip()
-
-            # Locate Match in DB
-            cursor.execute('''
-            SELECT id FROM matches
-            WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?
-            ''', (team1, team2, match_type, match_date))
-            match_row = cursor.fetchone()
-
-            if not match_row:
-                return  # No match found, nothing to remove
-
-            match_id = match_row[0]
-
-            # Delete Prediction from Database
-            cursor.execute('''
-            DELETE FROM predictions
-            WHERE match_id = ? AND user_id = ?
-            ''', (match_id, user.id))
-            conn.commit()
-
-
-        except Exception as e:
-            print(f"Error removing match prediction: {e}")
-    elif "Result Poll" in title:
-        try:
-            # Check if this is the message author removing their own result
-            if user.id != message.author.id:
-                return
-
-            # Get match details
-            cursor.execute('''
-            SELECT id, winner, score, match_week FROM matches
-            WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?
-            ''', (team1, team2, match_type, match_date))
-            match_data = cursor.fetchone()
-
-            if not match_data:
-                return
-
-            match_id, current_winner, current_score, match_week = match_data
-
-            if current_winner:  # Only proceed if there's a result to remove
-                # Start transaction
-                cursor.execute('BEGIN TRANSACTION')
-                try:
-                    # Get all predictions and their awarded points
-                    cursor.execute('''
-                    SELECT user_id, points 
-                    FROM predictions 
-                    WHERE match_id = ? AND points > 0
-                    ''', (match_id,))
-                    awarded_predictions = cursor.fetchall()
-
-                    # Remove points from predictions
-                    cursor.execute('''
-                    UPDATE predictions 
-                    SET points = 0 
-                    WHERE match_id = ?
-                    ''', (match_id,))
-
-                    # Remove points from leaderboard
-                    for user_id, points in awarded_predictions:
-                        cursor.execute('''
-                        UPDATE leaderboard 
-                        SET weekly_points = weekly_points - ? 
-                        WHERE user_id = ? AND match_week = ?
-                        ''', (points, user_id, match_week))
-
-                    # Clear the match result
-                    cursor.execute('''
-                    UPDATE matches 
-                    SET winner = NULL, score = NULL 
-                    WHERE id = ?
-                    ''', (match_id,))
-
-                    cursor.execute('COMMIT')
-                    await message.channel.send(f"Result for {team1} vs {team2} has been cleared and points have been removed.")
-                    await update_leaderboard()
-
-                except Exception as e:
-                    cursor.execute('ROLLBACK')
-                    await message.channel.send(f"Error removing match result: {e}")
+                    await message.channel.send(f"✅ The correct answer for '{question_text}' has been recorded.")
                     return
 
-        except Exception as e:
-            await message.channel.send(f"Error processing result removal: {e}")
+                if str(payload.emoji.name) == "✅":  # Change this emoji to whatever you prefer
+                    await message.channel.send(f"✅ Correct answer selection finalized! Checking responses...")
+
+                    # Fetch user responses
+                    cursor.execute('''
+                    SELECT user_id, answer FROM bonus_answers
+                    WHERE question_id = ?
+                    ''', (question_id,))
+                    user_responses = cursor.fetchall()
+
+                    if not user_responses:
+                        await message.channel.send("Error: No user responses found for this bonus question.")
+                        return
+
+                    awarded_users = []
+                    for user_id, user_selections_json in user_responses:
+                        user_selections = set(json.loads(user_selections_json))  # Convert user answers
+
+                        if len(correct_answers) > required_answers:
+                            # If only one answer is expected, allow any one correct answer
+                            if user_selections.issubset(correct_answers):  # Intersection (checks if at least one is correct)
+                                points_awarded = points_value  # Full points for selecting at least one
+                            else:
+                                points_awarded = 0  # No points if none were correct
+                        else:
+                            # Default behavior: Require an exact match of all correct answers
+                            points_awarded = points_value if user_selections == correct_answers else 0
+
+                        # Award points
+                        cursor.execute('''
+                        UPDATE bonus_answers
+                        SET points = ?
+                        WHERE question_id = ? AND user_id = ?
+                        ''', (points_awarded, question_id, user_id))
+                        conn.commit()
+
+                        cursor.execute('''
+                        INSERT INTO leaderboard (user_id, match_week, weekly_points)
+                        VALUES (?, ?, ?)
+                        ON CONFLICT(user_id, match_week) DO UPDATE SET
+                            weekly_points = leaderboard.weekly_points + ?
+                        ''', (user_id, match_week, points, points))
+                        conn.commit()
+
+                        if points_awarded > 0:
+                            awarded_users.append(user_id)
+
+                    # --- **Send Final Result Message** ---
+                    correct_answer_text = ", ".join(correct_answers)
+                    if awarded_users:
+                        awarded_mentions = ", ".join([f"<@{user_id}>" for user_id in awarded_users])
+                        await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answer_text}. Users awarded: {awarded_mentions}")
+                    else:
+                        await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answer_text}.")
+
+                    await update_leaderboard()
+    except Exception as e:
+        print(f"Error in reaction handling: {e}")
+        if bot_channel:
+            await bot_channel.send(f"Error processing reaction: {e}")
+
+@bot.event
+async def on_raw_reaction_remove(payload):
+    print("hi")
+    if payload.user_id == bot.user.id:
+        return  # Ignore bot reactions
+
+    # Fetch the full message if not already cached
+    try:
+        channel = bot.get_channel(payload.channel_id)
+        message = await channel.fetch_message(payload.message_id)
+        user = await bot.fetch_user(payload.user_id)
+
+        if not message.embeds:
+            return
+
+        embed = message.embeds[0]
+        title = embed.title
+    
+        if not message.embeds:
+            return
+
+        if "Bonus Question" in title:
+            question_text = title.split(":")[1].strip()
+
+            cursor.execute('''
+            SELECT id, options FROM bonus_questions
+            WHERE question = ?
+            ''', (question_text,))
+            question_row = cursor.fetchone()
+
+            if not question_row:
+                return
+
+            question_id, options = question_row
+            option_split = [option.strip() for option in options.split(",")]
+            reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
+
+            if str(payload.emoji.name) not in reactions:
+                return
+
+            # Fetch existing answers
+            cursor.execute('''
+            SELECT answer FROM bonus_answers WHERE user_id = ? AND question_id = ?
+            ''', (user.id, question_id))
+            existing_answer_row = cursor.fetchone()
+
+            if existing_answer_row and existing_answer_row[0]:
+                existing_answers = json.loads(existing_answer_row[0])
+                print(existing_answers)
+            else:
+                return  # Nothing to remove
+
+            # Map emoji to actual option
+            selected_index = reactions.index(str(payload.emoji.name))
+            selected_option = option_split[selected_index]
+
+            if selected_option in existing_answers:
+                print("i got here :/)")
+                existing_answers.remove(selected_option)
+                print(existing_answers)  # Remove selection
+
+            updated_answers = json.dumps(existing_answers)
+
+            # Update the database
+            cursor.execute('''
+            UPDATE bonus_answers
+            SET answer = ?
+            WHERE user_id = ? AND question_id = ?
+            ''', (updated_answers, user.id, question_id))
+            conn.commit()
+
+        elif "Bonus Result" in title:
+        # Only proceed if we haven't awarded points yet
+            if str(payload.emoji.name) != "✅":  # If not the finalize emoji
+                # Get question details
+                cursor.execute('''
+                SELECT correct_answer FROM bonus_questions
+                WHERE id = ?
+                ''', (question_id,))
+                answer_row = cursor.fetchone()
+
+                if answer_row and answer_row[0]:
+                    correct_answers = set(json.loads(answer_row[0]))
+                    # Map emoji to option
+                    selected_option = dict(zip(reactions, option_split)).get(str(payload.emoji.name))
+                    
+                    if selected_option and selected_option in correct_answers:
+                        correct_answers.remove(selected_option)
+                        # Update the database with new correct answers
+                        correct_answers_json = json.dumps(list(correct_answers))
+                        cursor.execute('''
+                        UPDATE bonus_questions
+                        SET correct_answer = ?
+                        WHERE id = ?
+                        ''', (correct_answers_json, question_id))
+                        conn.commit()
+                        await message.channel.send(f"✅ Removed {selected_option} from correct answers.")
+        
+        elif "Match Poll" in title:
+            try:
+                match_details = title.split(":")[1].strip()  # Extract teams and match type
+                teams, match_type = match_details.rsplit("(", 1)
+                team1, team2 = [team.strip() for team in teams.split("vs")]
+                match_type = match_type.strip(")")
+
+                # Extract Match Date
+                match_date_line = embed.description.split("\n")[0]  # "Match Date: YYYY-MM-DD"
+                match_date = match_date_line.replace("Match Date: ", "").strip()
+
+                # Locate Match in DB
+                cursor.execute('''
+                SELECT id FROM matches
+                WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?
+                ''', (team1, team2, match_type, match_date))
+                match_row = cursor.fetchone()
+
+                if not match_row:
+                    return  # No match found, nothing to remove
+
+                match_id = match_row[0]
+
+                # Delete Prediction from Database
+                cursor.execute('''
+                DELETE FROM predictions
+                WHERE match_id = ? AND user_id = ?
+                ''', (match_id, user.id))
+                conn.commit()
+
+
+            except Exception as e:
+                print(f"Error removing match prediction: {e}")
+        elif "Result Poll" in title:
+            try:
+                # Check if this is the message author removing their own result
+                if user.id != message.author.id:
+                    return
+
+                # Get match details
+                cursor.execute('''
+                SELECT id, winner, score, match_week FROM matches
+                WHERE team1 = ? AND team2 = ? AND match_type = ? AND match_date = ?
+                ''', (team1, team2, match_type, match_date))
+                match_data = cursor.fetchone()
+
+                if not match_data:
+                    return
+
+                match_id, current_winner, current_score, match_week = match_data
+
+                if current_winner:  # Only proceed if there's a result to remove
+                    # Start transaction
+                    cursor.execute('BEGIN TRANSACTION')
+                    try:
+                        # Get all predictions and their awarded points
+                        cursor.execute('''
+                        SELECT user_id, points 
+                        FROM predictions 
+                        WHERE match_id = ? AND points > 0
+                        ''', (match_id,))
+                        awarded_predictions = cursor.fetchall()
+
+                        # Remove points from predictions
+                        cursor.execute('''
+                        UPDATE predictions 
+                        SET points = 0 
+                        WHERE match_id = ?
+                        ''', (match_id,))
+
+                        # Remove points from leaderboard
+                        for user_id, points in awarded_predictions:
+                            cursor.execute('''
+                            UPDATE leaderboard 
+                            SET weekly_points = weekly_points - ? 
+                            WHERE user_id = ? AND match_week = ?
+                            ''', (points, user_id, match_week))
+
+                        # Clear the match result
+                        cursor.execute('''
+                        UPDATE matches 
+                        SET winner = NULL, score = NULL 
+                        WHERE id = ?
+                        ''', (match_id,))
+
+                        cursor.execute('COMMIT')
+                        await message.channel.send(f"Result for {team1} vs {team2} has been cleared and points have been removed.")
+                        await update_leaderboard()
+
+                    except Exception as e:
+                        cursor.execute('ROLLBACK')
+                        await message.channel.send(f"Error removing match result: {e}")
+                        return
+
+            except Exception as e:
+                await message.channel.send(f"Error processing result removal: {e}")
+    except Exception as e:
+        print(f"Error handling raw reaction removal: {e}")
     
 
 
