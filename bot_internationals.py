@@ -1511,7 +1511,7 @@ async def schedule_poll_deletion(ctx, match_date: str):
         # Convert match_date to datetime
         match_date_dt = datetime.strptime(match_date, "%d-%m")
         current_year = datetime.now().year
-        match_date_with_year = match_date_dt.replace(year=current_year)
+        match_date_with_year = match_date_dt.replace(year=current_year).strftime("%Y-%m-%d")
 
         deletion_time_utc = uk_tz.localize(
             datetime.combine(match_date_with_year, datetime.min.time()) + timedelta(hours=8)
