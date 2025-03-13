@@ -1511,14 +1511,14 @@ async def schedule_poll_deletion(ctx, match_date: str):
         # Convert match_date to datetime
         match_date_dt = datetime.strptime(match_date, "%d-%m")
         current_year = datetime.now().year
-        match_date_with_year = match_date_dt.replace(year=current_year).strftime("%Y-%m-%d")
+        match_date_with_year = match_date_dt.replace(year=current_year)
 
         deletion_time_utc = uk_tz.localize(
-            datetime.combine(match_date_with_year, datetime.min.time()) + timedelta(hours=8)
+            datetime.combine(match_date_with_year.date(), datetime.min.time()) + timedelta(hours=8)
         ).astimezone(pytz.utc)  # Convert to UTC for the scheduler
 
         # Schedule task
-        scheduler.add_job(delete_polls, "date", run_date=deletion_time_utc, args=[match_date_with_year.strftime("%d-%m")])
+        scheduler.add_job(delete_polls, "date", run_date=deletion_time_utc, args=[match_date])
         await ctx.send(f"Poll deletion for {match_date} scheduled at 8 AM UK time.")
 
     except Exception as e:
