@@ -5,6 +5,7 @@ import sqlite3
 import os
 from dotenv import load_dotenv
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.date import DateTrigger
 from datetime import datetime, timedelta
 import pytz
 import re
@@ -1479,6 +1480,7 @@ async def delete_polls(match_date: str):
     match_date = datetime.strptime(match_date, "%d-%m")      
     current_year = datetime.now().year
     match_date_with_year = match_date.replace(year=current_year).strftime("%Y-%m-%d")
+    print(match_date_with_year)
     try:
         # Fetch the channel IDs where the polls are located
         poll_channel_id = 1346615134885253181  # Replace with actual channel IDs        
@@ -1488,11 +1490,14 @@ async def delete_polls(match_date: str):
             return
 
         # Fetch all messages from the channel
-        async for message in poll_channel.history(limit=200):  # Adjust the limit if needed
+        async for message in poll_channel.history(limit=200):
             if message.author == bot.user and message.embeds:
-                embed = message.embeds[0]  # Get the first embed
-                if embed.description and match_date_with_year in embed.description:
-                    await message.delete()
+                embed = message.embeds[0]
+                if embed.description:
+                    # Look for date in the first line of description
+                    date_line = embed.description.split('\n')[0]
+                    if f"Match Date: {match_date_with_year}" in date_line:
+                        await message.delete()
 
         print(f"All polls for {match_date} have been successfully deleted.")
 
