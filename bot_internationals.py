@@ -135,6 +135,14 @@ TOURNAMENT_STAGES = {
     'F': ('Finals', 3)
 }
 
+REACTION_SETS = {
+    'set1': ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'],
+    'set2': ['🇦', '🇧', '🇨', '🇽', '🇾', '🇿'],  # Standard letters ABCXYZ
+    'set3': ['🅰️', '🅱️', '🆑', '🇩', '🇪', '🇫'],  # Fancy letters ABCDEF
+    'set4': ['1️⃣', '2️⃣', '3️⃣', '7️⃣', '8️⃣', '9️⃣']  # Numbers 123789
+    # Add more sets as needed
+}
+
 def is_mod_channel(ctx):
     admin_channel_id = 1346615169433997322
     return ctx.channel.id == admin_channel_id
@@ -143,6 +151,18 @@ def is_mod_channel(ctx):
 @bot.event
 async def on_ready():
     print(f"Logged in as {bot.user}")
+
+@bot.command()
+@commands.check(is_mod_channel)
+async def test_reactions(ctx, set_name: str):
+    """Test a reaction set"""
+    if set_name not in REACTION_SETS:
+        await ctx.send("Invalid set name")
+        return
+    
+    message = await ctx.send("Testing reactions...")
+    for reaction in REACTION_SETS[set_name]:
+        await message.add_reaction(reaction)
 
 @bot.event
 async def update_leaderboard():
@@ -345,7 +365,7 @@ async def add_bonus_question(ctx, date: str, match_week: str, question: str, des
 
 @bot.command()
 @commands.check(is_mod_channel)
-async def create_polls(ctx):
+async def create_polls(ctx, reaction_set: str = None):
     """
     Creates prediction polls in a public channel and result polls in some mod channel type thing.
     """
@@ -387,6 +407,8 @@ async def create_polls(ctx):
         for match in matches:
             match_id, match_date, match_type, team1, team2, winner_points, scoreline_points = match
 
+            reaction_set = reaction_set or 'set1'
+
             if isinstance(match_date, str):
                 match_date = datetime.strptime(match_date, "%Y-%m-%d").date()
 
@@ -400,16 +422,16 @@ async def create_polls(ctx):
             # Generate score options based on match type
             if match_type == 'BO1':
                 options = [f"{team1} wins", f"{team2} wins"]
-                reactions = ['1️⃣', '2️⃣']
+                reactions = REACTION_SETS[reaction_set][:2]
             elif match_type == 'BO3':
                 options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
-                reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣']
+                reactions = REACTION_SETS[reaction_set][:4]
             elif match_type == 'BO5':
                 options = [
                     f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
                     f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
                 ]
-                reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']
+                reactions = REACTION_SETS[reaction_set][:6]
 
             # Create prediction and result polls for the match
             await create_match_poll(poll_channel, admin_channel, match_id, match_date, team1, team2, match_type, options, reactions, winner_points, scoreline_points)
@@ -655,15 +677,45 @@ async def on_raw_reaction_add(payload):
                 
                 # Handle match poll (log predictions)
                 options = [field.value for field in embed.fields]
-                reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
+                all_possible_reactions = set()
+                for reaction_set in REACTION_SETS.values():
+                    all_possible_reactions.update(reaction_set)
 
-                if str(payload.emoji.name) not in reactions:
+                if str(payload.emoji.name) not in all_possible_reactions:
                     await bot_channel.send(f"{user.mention} Invalid reaction. Please select a valid option.")
                     return
+                
+                used_reaction_set = None
+                for set_name, reactions in REACTION_SETS.items():
+                    if str(payload.emoji.name) in reactions:
+                        used_reaction_set = set_name
+                        break
 
-                selected_index = reactions.index(str(payload.emoji.name))
-                prediction = options[selected_index]
-                pred_winner, pred_score = prediction.split(" ", 1)
+                if used_reaction_set is None:
+                    await bot_channel.send(f"{user.mention} Invalid reaction type.")
+                    return
+
+                if match_type == 'BO1':
+                    options = [f"{team1} wins", f"{team2} wins"]
+                    reactions = REACTION_SETS[used_reaction_set][:2]  # Only first 2 reactions
+                elif match_type == 'BO3':
+                    options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
+                    reactions = REACTION_SETS[used_reaction_set][:4]  # First 4 reactions
+                elif match_type == 'BO5':
+                    options = [
+                        f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
+                        f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
+                    ]
+                    reactions = REACTION_SETS[used_reaction_set][:6]  # All 6 reactions
+
+                # Now we can safely get the index
+                if str(payload.emoji.name) in reactions:  # Check if it's in the correct subset
+                    selected_index = reactions.index(str(payload.emoji.name))
+                    prediction = options[selected_index]
+                    pred_winner, pred_score = prediction.split(" ", 1)
+                else:
+                    await bot_channel.send(f"{user.mention} Invalid reaction for this match type.")
+                    return
 
                 # Insert prediction into the database
                 cursor.execute('''
@@ -698,15 +750,43 @@ async def on_raw_reaction_add(payload):
 
                 # Handle result poll
                 options = [field.value for field in embed.fields]
-                reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'][:len(options)]
+                all_possible_reactions = set()
+                for reaction_set in REACTION_SETS.values():
+                    all_possible_reactions.update(reaction_set)
 
-                if str(payload.emoji.name) not in reactions:
-                    await message.channel.send("Invalid reaction. Please select a valid option.")
+                if str(payload.emoji.name) not in all_possible_reactions:
                     return
 
-                selected_index = reactions.index(str(payload.emoji.name))
-                result = options[selected_index]
-                winner, score = result.split(" ", 1)
+                used_reaction_set = None
+                for set_name, reactions in REACTION_SETS.items():
+                    if str(payload.emoji.name) in reactions:
+                        used_reaction_set = set_name
+                        break
+                if used_reaction_set is None:
+                    await message.channel.send("❌ Invalid reaction type")
+                    return
+
+                if match_type == 'BO1':
+                    options = [f"{team1} wins", f"{team2} wins"]
+                    reactions = REACTION_SETS[used_reaction_set][:2]
+                elif match_type == 'BO3':
+                    options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
+                    reactions = REACTION_SETS[used_reaction_set][:4]
+                elif match_type == 'BO5':
+                    options = [
+                        f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
+                        f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
+                    ]
+                    reactions = REACTION_SETS[used_reaction_set][:6]
+
+                # 5. Get selected result
+                if str(payload.emoji.name) in reactions:
+                    selected_index = reactions.index(str(payload.emoji.name))
+                    result = options[selected_index]
+                    winner, score = result.split(" ", 1)
+                else:
+                    await message.channel.send("❌ Invalid reaction for this match type")
+                    return
 
                 # Update match result in the database
                 cursor.execute('''
@@ -1109,19 +1189,37 @@ async def on_raw_reaction_remove(payload):
 
                 match_id = match_row[0]
 
-                # Get the options and reactions for this match type
+                # Handle reaction validation
+                all_possible_reactions = set()
+                for reaction_set in REACTION_SETS.values():
+                    all_possible_reactions.update(reaction_set)
+
+                if str(payload.emoji.name) not in all_possible_reactions:
+                    return
+
+                # Find which reaction set was used
+                used_reaction_set = None
+                for set_name, reactions in REACTION_SETS.items():
+                    if str(payload.emoji.name) in reactions:
+                        used_reaction_set = set_name
+                        break
+
+                if not used_reaction_set:
+                    return
+
+                # Get correct options based on match type
                 if match_type == 'BO1':
                     options = [f"{team1} wins", f"{team2} wins"]
-                    reactions = ['1️⃣', '2️⃣']
+                    reactions = REACTION_SETS[used_reaction_set][:2]
                 elif match_type == 'BO3':
                     options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
-                    reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣']
+                    reactions = REACTION_SETS[used_reaction_set][:4]
                 elif match_type == 'BO5':
                     options = [
                         f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
                         f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
                     ]
-                    reactions = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣']
+                    reactions = REACTION_SETS[used_reaction_set][:6]
 
                 # Get the prediction that corresponds to the removed reaction
                 if str(payload.emoji.name) in reactions:
