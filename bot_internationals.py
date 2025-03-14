@@ -472,8 +472,8 @@ async def create_match_poll(prediction_channel, result_channel, match_id, match_
         description=f"Match Date: {match_date}\nReact with your prediction!",
         color=discord.Color.blue()
     )
-    for i, option in enumerate(options, start=1):
-        prediction_embed.add_field(name=f"Option {i}", value=option, inline=False)
+    for i, option in enumerate(options):
+        prediction_embed.add_field(name=f"Option {reactions[i]}", value=option, inline=False)
 
     prediction_message = await prediction_channel.send(embed=prediction_embed)
     for reaction in reactions:
