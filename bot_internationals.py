@@ -1356,6 +1356,73 @@ async def reset_stage(ctx, stage: str):
     except Exception as e:
         await ctx.send(f"❌ Error: {e}")
 
+@bot.command()
+@commands.check(is_mod_channel)
+async def clear_results(ctx, stage: str):
+    """
+    Removes all winners and scorelines from matches in a specific tournament stage.
+    Args:
+        stage: Tournament stage ('G' for Groups, 'SF' for Semi-Finals, 'F' for Finals)
+    """
+    try:
+        # Validate stage input
+        if stage not in TOURNAMENT_STAGES:
+            await ctx.send("❌ Invalid stage. Use 'G' for Groups, 'SF' for Semi-Finals, or 'F' for Finals.")
+            return
+
+        # Start transaction
+        cursor.execute('BEGIN TRANSACTION')
+        try:
+            # Get all matches with results from this stage
+            cursor.execute('''
+            SELECT id, team1, team2, winner, score 
+            FROM matches 
+            WHERE match_week = ? AND winner IS NOT NULL
+            ''', (stage,))
+            matches_with_results = cursor.fetchall()
+
+            if not matches_with_results:
+                await ctx.send(f"No results found for {TOURNAMENT_STAGES[stage][0]}.")
+                return
+
+            # Remove points from predictions and leaderboard
+            for match_id, team1, team2, winner, score in matches_with_results:
+                # Get predictions that earned points
+                cursor.execute('''
+                SELECT user_id, points FROM predictions 
+                WHERE match_id = ? AND points > 0
+                ''', (match_id,))
+                awarded_predictions = cursor.fetchall()
+
+                # Reset prediction points
+                cursor.execute('UPDATE predictions SET points = 0 WHERE match_id = ?', (match_id,))
+
+                # Remove points from leaderboard
+                for user_id, points in awarded_predictions:
+                    cursor.execute('''
+                    UPDATE leaderboard 
+                    SET weekly_points = weekly_points - ? 
+                    WHERE user_id = ? AND match_week = ?
+                    ''', (points, user_id, stage))
+
+            # Clear all results from this stage
+            cursor.execute('''
+            UPDATE matches 
+            SET winner = NULL, score = NULL 
+            WHERE match_week = ?
+            ''', (stage,))
+
+            cursor.execute('COMMIT')
+            await ctx.send(f"✅ Successfully cleared all results from {TOURNAMENT_STAGES[stage][0]}.")
+            await update_leaderboard()
+
+        except Exception as e:
+            cursor.execute('ROLLBACK')
+            await ctx.send(f"❌ Error during result clearing: {e}")
+
+    except Exception as e:
+        await ctx.send(f"❌ Error: {e}")
+
 
 @bot.command()
 @commands.check(is_mod_channel)
