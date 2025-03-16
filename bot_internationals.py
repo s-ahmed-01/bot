@@ -1311,7 +1311,50 @@ async def on_raw_reaction_remove(payload):
         print(f"Error handling raw reaction removal: {e}")
     
 
+@bot.command()
+@commands.check(is_mod_channel)
+async def reset_stage(ctx, stage: str):
+    """
+    Reset leaderboard entries and predictions for a specific tournament stage.
+    Args:
+        stage: Tournament stage ('G' for Groups, 'SF' for Semi-Finals, 'F' for Finals)
+    """
+    try:
+        # Validate stage input
+        if stage not in TOURNAMENT_STAGES:
+            await ctx.send("❌ Invalid stage. Use 'G' for Groups, 'SF' for Semi-Finals, or 'F' for Finals.")
+            return
 
+        # Start transaction
+        cursor.execute('BEGIN TRANSACTION')
+        try:
+            # Get matches from this stage
+            cursor.execute('''
+            SELECT id FROM matches 
+            WHERE match_week = ?
+            ''', (stage,))
+            match_ids = [row[0] for row in cursor.fetchall()]
+
+            if not match_ids:
+                await ctx.send(f"No matches found for stage {TOURNAMENT_STAGES[stage][0]}.")
+                return
+
+            # Delete leaderboard entries for this stage
+            cursor.execute('''
+            DELETE FROM leaderboard 
+            WHERE match_week = ?
+            ''', (stage,))
+
+            cursor.execute('COMMIT')
+            await ctx.send(f"✅ Successfully reset all entries for {TOURNAMENT_STAGES[stage][0]}.")
+            await update_leaderboard()
+
+        except Exception as e:
+            cursor.execute('ROLLBACK')
+            await ctx.send(f"❌ Error during reset: {e}")
+
+    except Exception as e:
+        await ctx.send(f"❌ Error: {e}")
 
 
 @bot.command()
