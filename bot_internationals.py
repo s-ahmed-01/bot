@@ -212,57 +212,36 @@ async def update_leaderboard():
 
             def tie_breaker(user_data, latest_stage):
                 """
-                Break ties by comparing scores from previous stages.
+                Break ties by comparing scores from previous stages, falling back to username if all stages are tied.
                 """
-                def compare_users(user1, user2, stage):
-                    if stage not in ['G', 'SF', 'F']:
-                        return 0  # No more stages to compare
+                def compare_users(user1, user2):
+                    # First compare total points
+                    if user_data[user1]["total"] != user_data[user2]["total"]:
+                        return user_data[user2]["total"] - user_data[user1]["total"]
+                    
+                    # Get all stages in reverse order
+                    stages = ['F', 'SF', 'G']
+                    start_index = stages.index(latest_stage)
+                    
+                    # Compare each stage from latest to earliest
+                    for stage in stages[start_index:]:
+                        score1 = user_data[user1]["stages"].get(stage, 0)
+                        score2 = user_data[user2]["stages"].get(stage, 0)
+                        
+                        if score1 != score2:
+                            return score2 - score1  # Higher score first
+                    
+                    # If all stages are tied, sort alphabetically by username
+                    cursor.execute('SELECT username FROM users WHERE user_id IN (?, ?)', (user1, user2))
+                    usernames = cursor.fetchall()
+                    username1 = usernames[0][0] if usernames and len(usernames) > 0 else str(user1)
+                    username2 = usernames[1][0] if usernames and len(usernames) > 1 else str(user2)
+                    return -1 if username1.lower() < username2.lower() else 1
 
-                    score1 = user_data[user1]["stages"].get(stage, 0)
-                    score2 = user_data[user2]["stages"].get(stage, 0)
-
-                    print(f"Comparing users {user1} and {user2} for stage {stage}: score1={score1}, score2={score2}")
-
-                    if score1 != score2:
-                        return score2 - score1  # Higher score first
-
-                    # Get previous stage
-                    stages = ['G', 'SF', 'F']
-                    current_index = stages.index(stage)
-                    if current_index > 0:
-                        return compare_users(user1, user2, stages[current_index - 1])
-                    return 0
-
-                def sort_key(user):
-                    return (
-                        user_data[user]["total"],
-                        user_data[user]["stages"].get(latest_stage, 0)
-                    )
-
-                sorted_users = sorted(user_data.keys(), key=sort_key, reverse=True)
-                print(f"sorted_users before tie-breaking: {sorted_users}")
-
-                # Handle ties
-                i = 0
-                while i < len(sorted_users) - 1:
-                    j = i
-                    while j < len(sorted_users) - 1 and sort_key(sorted_users[j]) == sort_key(sorted_users[j + 1]):
-                        j += 1
-                    if j > i:
-                        tied_users = sorted_users[i:j + 1]
-                        print(f"Tie detected between users: {tied_users}")
-                        try:
-                            tied_users.sort(
-                                key=functools.cmp_to_key(
-                                    lambda x, y: compare_users(x, y, latest_stage)
-                                ),
-                                reverse=True
-                            )
-                            sorted_users[i:j + 1] = tied_users
-                        except Exception as e:
-                            print(f"Error during tie-breaking: {e}")
-                    i = j + 1
-
+                # Sort users using the comparison function
+                sorted_users = list(user_data.keys())
+                sorted_users.sort(key=functools.cmp_to_key(compare_users))
+                
                 return sorted_users
 
             # Get the current stage
@@ -1969,6 +1948,18 @@ async def add_prediction(ctx, username: str, match_date: str, team1: str, team2:
         await ctx.send("❌ Invalid date format. Please use DD-MM.")
     except Exception as e:
         await ctx.send(f"❌ Error adding prediction: {e}")
+
+@bot.command()
+@commands.check(is_mod_channel)
+async def update_board(ctx):
+    """
+    Manually triggers a leaderboard update.
+    """
+    try:
+        await update_leaderboard()
+        await ctx.send("✅ Leaderboard has been manually updated.")
+    except Exception as e:
+        await ctx.send(f"❌ Error updating leaderboard: {e}")
 
 
 # Run bot
