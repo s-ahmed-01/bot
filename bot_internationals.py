@@ -1240,6 +1240,12 @@ async def on_raw_reaction_remove(payload):
                 print(f"Error removing match prediction: {e}")
         elif "Result Poll" in title:
             try:
+                match_details = title.split(":")[1].strip()
+                teams, match_type = match_details.rsplit("(", 1)
+                team1, team2 = [team.strip() for team in teams.split("vs")]
+                match_type = match_type.strip(")")
+                datestring = re.search(r"Match Date:\s*(\d{4}-\d{2}-\d{2})", embed.description)
+                match_date = datestring.group(1) if datestring else None
                 # Check if this is the message author removing their own result
                 if user.id != message.author.id:
                     return
