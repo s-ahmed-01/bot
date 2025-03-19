@@ -136,11 +136,7 @@ TOURNAMENT_STAGES = {
 }
 
 REACTION_SETS = {
-    'set1': ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣', '6️⃣'],
-    'set2': ['🇦', '🇧', '🇨', '🇽', '🇾', '🇿'],  # Standard letters ABCXYZ
-    'set3': ['🅰️', '🅱️', '🆑', '🇩', '🇪', '🇫'],  # Fancy letters ABCDEF
-    'set4': ['1️⃣', '2️⃣', '3️⃣', '7️⃣', '8️⃣', '9️⃣']  # Numbers 123789
-    # Add more sets as needed
+    'set1': ['🟦', '🔵', '💙', '❤️', '🔴', '🟥'],  # Blue/Red themed emojis only
 }
 
 def is_mod_channel(ctx):
@@ -344,7 +340,7 @@ async def add_bonus_question(ctx, date: str, match_week: str, question: str, des
 
 @bot.command()
 @commands.check(is_mod_channel)
-async def create_polls(ctx, reaction_set: str = None):
+async def create_polls(ctx):
     """
     Creates prediction polls in a public channel and result polls in some mod channel type thing.
     """
@@ -386,7 +382,7 @@ async def create_polls(ctx, reaction_set: str = None):
         for match in matches:
             match_id, match_date, match_type, team1, team2, winner_points, scoreline_points = match
 
-            reaction_set = reaction_set or 'set1'
+            reaction_set = 'set1'
 
             if isinstance(match_date, str):
                 match_date = datetime.strptime(match_date, "%Y-%m-%d").date()
@@ -401,10 +397,10 @@ async def create_polls(ctx, reaction_set: str = None):
             # Generate score options based on match type
             if match_type == 'BO1':
                 options = [f"{team1} wins", f"{team2} wins"]
-                reactions = REACTION_SETS[reaction_set][:2]
+                reactions = REACTION_SETS[reaction_set][2:4]
             elif match_type == 'BO3':
                 options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
-                reactions = REACTION_SETS[reaction_set][:4]
+                reactions = REACTION_SETS[reaction_set][1:5]
             elif match_type == 'BO5':
                 options = [
                     f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
@@ -522,6 +518,12 @@ async def create_bonus_poll(prediction_channel, result_channel, question_id, que
 @bot.event
 async def on_raw_reaction_add(payload):
     try:
+        POLL_CHANNEL_ID = 1346615134885253181  # Your poll channel
+        ADMIN_CHANNEL_ID = 1346615169433997322  # Your admin channel
+        if payload.user_id == bot.user.id:
+            return  # Ignore bot reactions
+        if payload.channel_id not in [POLL_CHANNEL_ID, ADMIN_CHANNEL_ID]:
+            return
         print("the bot has seen the reaction")
         bot_channel_id = 1346615855408091180  # Replace with your bot channel ID
         bot_channel = bot.get_channel(bot_channel_id)
@@ -676,10 +678,10 @@ async def on_raw_reaction_add(payload):
 
                 if match_type == 'BO1':
                     options = [f"{team1} wins", f"{team2} wins"]
-                    reactions = REACTION_SETS[used_reaction_set][:2]  # Only first 2 reactions
+                    reactions = REACTION_SETS[used_reaction_set][2:4]  # Only first 2 reactions
                 elif match_type == 'BO3':
                     options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
-                    reactions = REACTION_SETS[used_reaction_set][:4]  # First 4 reactions
+                    reactions = REACTION_SETS[used_reaction_set][1:5]  # First 4 reactions
                 elif match_type == 'BO5':
                     options = [
                         f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
@@ -713,7 +715,7 @@ async def on_raw_reaction_add(payload):
                 ''', (user.id, str(user.name)))  # Stores the current username
                 conn.commit()
 
-                await bot_channel.send(f"{user.name} your prediction has been logged: {pred_winner} with score {pred_score}.")
+                await print(f"{user.name} your prediction has been logged: {pred_winner} with score {pred_score}.")
 
             elif poll_type == "result_poll":
                 # Check if result already exists
@@ -747,10 +749,10 @@ async def on_raw_reaction_add(payload):
 
                 if match_type == 'BO1':
                     options = [f"{team1} wins", f"{team2} wins"]
-                    reactions = REACTION_SETS[used_reaction_set][:2]
+                    reactions = REACTION_SETS[used_reaction_set][2:4]
                 elif match_type == 'BO3':
                     options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
-                    reactions = REACTION_SETS[used_reaction_set][:4]
+                    reactions = REACTION_SETS[used_reaction_set][1:5]
                 elif match_type == 'BO5':
                     options = [
                         f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
@@ -1050,8 +1052,12 @@ async def on_raw_reaction_add(payload):
 @bot.event
 async def on_raw_reaction_remove(payload):
     print("hi")
+    POLL_CHANNEL_ID = 1346615134885253181  # Your poll channel
+    ADMIN_CHANNEL_ID = 1346615169433997322  # Your admin channel
     if payload.user_id == bot.user.id:
         return  # Ignore bot reactions
+    if payload.channel_id not in [POLL_CHANNEL_ID, ADMIN_CHANNEL_ID]:
+        return
 
     # Fetch the full message if not already cached
     try:
@@ -1143,7 +1149,7 @@ async def on_raw_reaction_remove(payload):
                         WHERE id = ?
                         ''', (correct_answers_json, question_id))
                         conn.commit()
-                        await message.channel.send(f"✅ Removed {selected_option} from correct answers.")
+                        await print(f"✅ Removed {selected_option} from correct answers.")
         
         elif "Match Poll" in title:
             try:
@@ -1189,10 +1195,10 @@ async def on_raw_reaction_remove(payload):
                 # Get correct options based on match type
                 if match_type == 'BO1':
                     options = [f"{team1} wins", f"{team2} wins"]
-                    reactions = REACTION_SETS[used_reaction_set][:2]
+                    reactions = REACTION_SETS[used_reaction_set][2:4]
                 elif match_type == 'BO3':
                     options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
-                    reactions = REACTION_SETS[used_reaction_set][:4]
+                    reactions = REACTION_SETS[used_reaction_set][1:5]
                 elif match_type == 'BO5':
                     options = [
                         f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
