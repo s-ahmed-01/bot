@@ -283,21 +283,23 @@ async def update_leaderboard():
                 async for message in leaderboard_channel.history(limit=10):
                     if message.author == bot.user and "🏆 Leaderboard 🏆" in message.content:
                         existing_message = message
+                        print(f"Found existing leaderboard message with ID: {message.id}")
                         break
             except discord.NotFound:
                 existing_message = None
 
-            if existing_message:
+            # Always create new message if none found
+            if not existing_message:
+                new_message = await leaderboard_channel.send(leaderboard_message)
+                print(f"Created new leaderboard message with ID: {new_message.id}")
+            else:
                 try:
                     await existing_message.edit(content=leaderboard_message)
-                    print("Updated existing leaderboard message")
+                    print(f"Updated existing leaderboard message with ID: {existing_message.id}")
                 except discord.NotFound:
-                    # Message was deleted, send a new one
+                    # If edit fails because message was deleted
                     new_message = await leaderboard_channel.send(leaderboard_message)
-                    print("Previous message not found, created new leaderboard message")
-            else:
-                new_message = await leaderboard_channel.send(leaderboard_message)
-                print("Created new leaderboard message")
+                    print(f"Previous message not found, created new with ID: {new_message.id}")
 
         except discord.Forbidden:
             print("Bot doesn't have permission to send/edit messages")
@@ -1011,7 +1013,7 @@ async def on_raw_reaction_add(payload):
                 answer_row = cursor.fetchone()
 
                 cursor.execute('SELECT match_week, points FROM bonus_questions WHERE id = ?', (question_id,))
-                bonus_data = cursor.fetchone()[0]  # Get match_week from the bonus question
+                bonus_data = cursor.fetchone()  # Get match_week from the bonus question
                 if not bonus_data:
                     return
                 match_week, points = bonus_data
