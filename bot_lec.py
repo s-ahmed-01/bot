@@ -275,13 +275,22 @@ async def update_leaderboard():
                 week_scores = " | ".join(f"Week {week}: {points}" for week, points in sorted(data["weeks"].items()))
                 leaderboard_message += f"{rank}. **{username}** - {week_scores} | **Total: {data['total']}**\n"
 
-        # Edit the existing leaderboard message, or send a new one
-        async for message in leaderboard_channel.history(limit=5):
-            if message.author == bot.user:
-                await message.edit(content=leaderboard_message)
-                return
 
-        await leaderboard_channel.send(leaderboard_message)
+        try:
+            message_found = False
+            async for message in leaderboard_channel.history(limit=5):
+                if message.author == bot.user:
+                    await message.edit(content=leaderboard_message)
+                    print(f"Updated existing leaderboard message: {leaderboard_message}")
+                    message_found = True
+                    break
+
+            if not message_found:
+                await leaderboard_channel.send(leaderboard_message)
+                print(f"Created new leaderboard message: {leaderboard_message}")
+
+        except Exception as e:
+            print(f"Error sending/editing leaderboard message: {e}")
 
     except Exception as e:
         print(f"Error updating leaderboard: {e}")
@@ -872,7 +881,7 @@ async def on_raw_reaction_add(payload):
             option_split = [option.strip() for option in options.split(",")]
             reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
 
-            if str(payload.emoji.name) not in reactions:
+            if str(payload.emoji.name) not in reactions and str(payload.emoji.name) != "✅":
                 await message.channel.send("Invalid reaction. Please select a valid option.")
                 return
 
