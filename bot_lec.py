@@ -279,14 +279,22 @@ async def update_leaderboard():
         try:
             # First try to find existing message
             existing_message = None
-            async for message in leaderboard_channel.history(limit=10):
-                if message.author == bot.user and "🏆 Leaderboard 🏆" in message.content:
-                    existing_message = message
-                    break
+            try:
+                async for message in leaderboard_channel.history(limit=10):
+                    if message.author == bot.user and "🏆 Leaderboard 🏆" in message.content:
+                        existing_message = message
+                        break
+            except discord.NotFound:
+                existing_message = None
 
             if existing_message:
-                await existing_message.edit(content=leaderboard_message)
-                print("Updated existing leaderboard message")
+                try:
+                    await existing_message.edit(content=leaderboard_message)
+                    print("Updated existing leaderboard message")
+                except discord.NotFound:
+                    # Message was deleted, send a new one
+                    new_message = await leaderboard_channel.send(leaderboard_message)
+                    print("Previous message not found, created new leaderboard message")
             else:
                 new_message = await leaderboard_channel.send(leaderboard_message)
                 print("Created new leaderboard message")
@@ -1002,8 +1010,11 @@ async def on_raw_reaction_add(payload):
                 ''', (question_text,))
                 answer_row = cursor.fetchone()
 
-                cursor.execute('SELECT match_week FROM bonus_questions WHERE id = ?', (question_id,))
-                match_week = cursor.fetchone()[0]  # Get match_week from the bonus question
+                cursor.execute('SELECT match_week, points FROM bonus_questions WHERE id = ?', (question_id,))
+                bonus_data = cursor.fetchone()[0]  # Get match_week from the bonus question
+                if not bonus_data:
+                    return
+                match_week, points = bonus_data
                 
                 if not question_row:
                     await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
@@ -1083,8 +1094,7 @@ async def on_raw_reaction_add(payload):
                     # --- **Send Final Result Message** ---
                     correct_answer_text = ", ".join(correct_answers)
                     if awarded_users:
-                        awarded_mentions = ", ".join([f"<@{user_id}>" for user_id in awarded_users])
-                        await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answer_text}. Users awarded: {awarded_mentions}")
+                        await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answer_text}.")
                     else:
                         await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answer_text}.")
 
