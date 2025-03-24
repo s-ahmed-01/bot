@@ -744,7 +744,7 @@ async def on_raw_reaction_add(payload):
                 ''', (user.id, str(user.name)))  # Stores the current username
                 conn.commit()
 
-                await print(f"{user.name} your prediction has been logged: {pred_winner} with score {pred_score}.")
+                print(f"{user.name} your prediction has been logged: {pred_winner} with score {pred_score}.")
 
             elif poll_type == "result_poll":
                 # Check if result already exists
@@ -891,7 +891,7 @@ async def on_raw_reaction_add(payload):
                     latest_week = 0  # No previous activity
 
                 # Find all missed weeks between the latest activity and current match week
-                missed_weeks = list(range(latest_week + 1, match_row[1]))
+                missed_weeks = list(range(latest_week + 1, question_row[1]))
                 print(f"all_weeks: {missed_weeks}")
 
                 if missed_weeks:
