@@ -277,20 +277,24 @@ async def update_leaderboard():
 
 
         try:
-            message_found = False
-            async for message in leaderboard_channel.history(limit=5):
-                if message.author == bot.user:
-                    await message.edit(content=leaderboard_message)
-                    print(f"Updated existing leaderboard message: {leaderboard_message}")
-                    message_found = True
+            # First try to find existing message
+            existing_message = None
+            async for message in leaderboard_channel.history(limit=10):
+                if message.author == bot.user and "🏆 Leaderboard 🏆" in message.content:
+                    existing_message = message
                     break
 
-            if not message_found:
-                await leaderboard_channel.send(leaderboard_message)
-                print(f"Created new leaderboard message: {leaderboard_message}")
+            if existing_message:
+                await existing_message.edit(content=leaderboard_message)
+                print("Updated existing leaderboard message")
+            else:
+                new_message = await leaderboard_channel.send(leaderboard_message)
+                print("Created new leaderboard message")
 
-        except Exception as e:
-            print(f"Error sending/editing leaderboard message: {e}")
+        except discord.Forbidden:
+            print("Bot doesn't have permission to send/edit messages")
+        except discord.HTTPException as e:
+            print(f"Error sending/editing message: {e}")
 
     except Exception as e:
         print(f"Error updating leaderboard: {e}")
@@ -502,8 +506,8 @@ async def create_match_poll(prediction_channel, result_channel, match_id, match_
         description=f"Match Date: {match_date}\nReact with the correct result!",
         color=discord.Color.green()
     )
-    for i, option in enumerate(options, start=1):
-        result_embed.add_field(name=f"Option {i}", value=option, inline=False)
+    for i, option in enumerate(options):
+        result_embed.add_field(name=f"Option {reactions[i]}", value=option, inline=False)
 
     result_message = await result_channel.send(embed=result_embed)
     for reaction in reactions:
@@ -997,6 +1001,9 @@ async def on_raw_reaction_add(payload):
                 ORDER BY id DESC LIMIT 1
                 ''', (question_text,))
                 answer_row = cursor.fetchone()
+
+                cursor.execute('SELECT match_week FROM bonus_questions WHERE id = ?', (question_id,))
+                match_week = cursor.fetchone()[0]  # Get match_week from the bonus question
                 
                 if not question_row:
                     await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
