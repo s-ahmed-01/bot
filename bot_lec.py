@@ -268,6 +268,7 @@ async def update_leaderboard():
             # First try to find existing message with fresh fetch
             existing_message = None
             try:
+                await leaderboard_channel.purge(check=lambda m: m.author == bot.user and "🏆 Leaderboard 🏆" in m.content, limit=10)
                 async for message in leaderboard_channel.history(limit=10):
                     if message.author == bot.user and "🏆 Leaderboard 🏆" in message.content:
                         try:
