@@ -1043,7 +1043,7 @@ async def on_raw_reaction_add(payload):
 
                 if str(payload.emoji.name) == "✅":  # Change this emoji to whatever you prefer
                     await message.channel.send(f"✅ Correct answer selection finalized! Checking responses...")
-
+                    print(correct_answers)
                     # Fetch user responses
                     cursor.execute('''
                     SELECT user_id, answer FROM bonus_answers
@@ -1070,8 +1070,11 @@ async def on_raw_reaction_add(payload):
                         else:
                             print("ok i somewhat work")
                             # Default behavior: Require an exact match of all correct answers
-                            points_awarded = points_value if user_selections == correct_answers else 0
-
+                            if user_selections.issubset(correct_answers) and user_selections != correct_answers:
+                                print("Partial match detected, awarding 0 points")
+                                points_awarded = 0
+                            else:
+                                points_awarded = points_value if user_selections == correct_answers else 0
                         # Award points
                         cursor.execute('''
                         UPDATE bonus_answers
