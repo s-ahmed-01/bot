@@ -150,18 +150,6 @@ def is_mod_channel(ctx):
 async def on_ready():
     print(f"Logged in as {bot.user}")
 
-@bot.command()
-@commands.check(is_mod_channel)
-async def test_reactions(ctx, set_name: str):
-    """Test a reaction set"""
-    if set_name not in REACTION_SETS:
-        await ctx.send("Invalid set name")
-        return
-    
-    message = await ctx.send("Testing reactions...")
-    for reaction in REACTION_SETS[set_name]:
-        await message.add_reaction(reaction)
-
 @bot.event
 async def update_leaderboard():
     """
@@ -280,7 +268,6 @@ async def update_leaderboard():
             # First try to find existing message with fresh fetch
             existing_message = None
             try:
-                await leaderboard_channel.fetch_messages()  # Force fresh fetch
                 async for message in leaderboard_channel.history(limit=10):
                     if message.author == bot.user and "🏆 Leaderboard 🏆" in message.content:
                         try:
