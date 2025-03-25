@@ -277,18 +277,23 @@ async def update_leaderboard():
 
 
         try:
-            # First try to find existing message
+            # First try to find existing message with fresh fetch
             existing_message = None
             try:
+                await leaderboard_channel.fetch_messages()  # Force fresh fetch
                 async for message in leaderboard_channel.history(limit=10):
                     if message.author == bot.user and "🏆 Leaderboard 🏆" in message.content:
-                        existing_message = message
-                        print(f"Found existing leaderboard message with ID: {message.id}")
-                        break
+                        try:
+                            # Verify message still exists
+                            existing_message = await leaderboard_channel.fetch_message(message.id)
+                            print(f"Found existing leaderboard message with ID: {message.id}")
+                            break
+                        except discord.NotFound:
+                            continue  # Message doesn't exist, keep looking
             except discord.NotFound:
                 existing_message = None
 
-            # Always create new message if none found
+            # Create new message if none found
             if not existing_message:
                 new_message = await leaderboard_channel.send(leaderboard_message)
                 print(f"Created new leaderboard message with ID: {new_message.id}")
@@ -297,14 +302,10 @@ async def update_leaderboard():
                     await existing_message.edit(content=leaderboard_message)
                     print(f"Updated existing leaderboard message with ID: {existing_message.id}")
                 except discord.NotFound:
-                    # If edit fails because message was deleted
                     new_message = await leaderboard_channel.send(leaderboard_message)
                     print(f"Previous message not found, created new with ID: {new_message.id}")
-
-        except discord.Forbidden:
-            print("Bot doesn't have permission to send/edit messages")
-        except discord.HTTPException as e:
-            print(f"Error sending/editing message: {e}")
+        except Exception as e:
+            print(f"Error updating leaderboard: {e}")
 
     except Exception as e:
         print(f"Error updating leaderboard: {e}")
@@ -453,16 +454,21 @@ async def create_polls(ctx):
             # Generate score options based on match type
             if match_type == 'BO1':
                 options = [f"{team1} wins", f"{team2} wins"]
-                reactions = REACTION_SETS[reaction_set][2:4]
+                reactions = [REACTION_SETS[reaction_set][0], REACTION_SETS[reaction_set][5]]  # Outer pair (🟦🟥)
             elif match_type == 'BO3':
                 options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
-                reactions = REACTION_SETS[reaction_set][1:5]
+                reactions = [                                                    # From outside in:
+                    REACTION_SETS[reaction_set][0],  # 🟦 (far left)
+                    REACTION_SETS[reaction_set][1],  # 🟥 (far right)
+                    REACTION_SETS[reaction_set][4],  # 🔵 (inner left)
+                    REACTION_SETS[reaction_set][5]   # 🔴 (inner right)
+                ]
             elif match_type == 'BO5':
                 options = [
                     f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
                     f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
                 ]
-                reactions = REACTION_SETS[reaction_set][:6]
+                reactions = REACTION_SETS[reaction_set]  # All six emojis
 
             # Create prediction and result polls for the match
             await create_match_poll(poll_channel, admin_channel, match_id, match_date, team1, team2, match_type, options, reactions, winner_points, scoreline_points)
