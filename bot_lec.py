@@ -1013,6 +1013,7 @@ async def on_raw_reaction_add(payload):
                 match_week, points = bonus_data
                 
                 if not question_row:
+
                     await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
                     return
 
@@ -1056,15 +1057,18 @@ async def on_raw_reaction_add(payload):
 
                     awarded_users = []
                     for user_id, user_selections_json in user_responses:
-                        user_selections = set(json.loads(user_selections_json))  # Convert user answers
+                        user_selections = set(json.loads(user_selections_json))
+                        print(user_selections)  # Convert user answers
 
                         if len(correct_answers) > required_answers:
                             # If only one answer is expected, allow any one correct answer
-                            if user_selections.issubset(correct_answers):  # Intersection (checks if at least one is correct)
+                            if user_selections.issubset(correct_answers):
+                                print("why here?")  # Intersection (checks if at least one is correct)
                                 points_awarded = points_value  # Full points for selecting at least one
                             else:
                                 points_awarded = 0  # No points if none were correct
                         else:
+                            print("ok i somewhat work")
                             # Default behavior: Require an exact match of all correct answers
                             points_awarded = points_value if user_selections == correct_answers else 0
 
