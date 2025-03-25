@@ -156,7 +156,7 @@ async def update_leaderboard():
     Updates the leaderboard message in the dedicated channel.
     """
     try:
-        leaderboard_channel_id = 1336468081563930674
+        leaderboard_channel_id = 1346615199544905730
         leaderboard_channel = bot.get_channel(leaderboard_channel_id)
 
         if not leaderboard_channel:
