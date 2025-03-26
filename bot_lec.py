@@ -1070,6 +1070,8 @@ async def on_raw_reaction_add(payload):
                         else:
                             print("ok i somewhat work")
                             # Default behavior: Require an exact match of all correct answers
+                            print(user_selections.issubset(correct_answers))
+                            print(user_selections != correct_answers)
                             if user_selections.issubset(correct_answers) and user_selections != correct_answers:
                                 print("Partial match detected, awarding 0 points")
                                 points_awarded = 0
