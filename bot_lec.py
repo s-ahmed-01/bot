@@ -801,16 +801,21 @@ async def on_raw_reaction_add(payload):
 
                 if match_type == 'BO1':
                     options = [f"{team1} wins", f"{team2} wins"]
-                    reactions = REACTION_SETS[used_reaction_set][2:4]
+                    reactions = (REACTION_SETS[used_reaction_set][0], REACTION_SETS[used_reaction_set][5])  # Outer pair (🟦🟥)
                 elif match_type == 'BO3':
                     options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
-                    reactions = REACTION_SETS[used_reaction_set][1:5]
+                    reactions = (                                                    # From outside in:
+                        REACTION_SETS[used_reaction_set][0],  # 🟦 (far left)
+                        REACTION_SETS[used_reaction_set][1],  # 🟥 (far right)
+                        REACTION_SETS[used_reaction_set][4],  # 🔵 (inner left)
+                        REACTION_SETS[used_reaction_set][5]   # 🔴 (inner right)
+                    )
                 elif match_type == 'BO5':
                     options = [
                         f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
                         f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
                     ]
-                    reactions = REACTION_SETS[used_reaction_set][:6]
+                    reactions = REACTION_SETS[used_reaction_set][:6]  # All six emojis
 
                 # 5. Get selected result
                 if str(payload.emoji.name) in reactions:
@@ -1256,21 +1261,21 @@ async def on_raw_reaction_remove(payload):
                 # Generate score options based on match type
                 if match_type == 'BO1':
                     options = [f"{team1} wins", f"{team2} wins"]
-                    reactions = tuple([REACTION_SETS[reaction_set][0], REACTION_SETS[reaction_set][5]])  # Outer pair (🟦🟥)
+                    reactions = (REACTION_SETS[used_reaction_set][0], REACTION_SETS[used_reaction_set][5])  # Outer pair (🟦🟥)
                 elif match_type == 'BO3':
                     options = [f"{team1} 2-0", f"{team1} 2-1", f"{team2} 2-1", f"{team2} 2-0"]
-                    reactions = tuple([                                                    # From outside in:
-                        REACTION_SETS[reaction_set][0],  # 🟦 (far left)
-                        REACTION_SETS[reaction_set][1],  # 🟥 (far right)
-                        REACTION_SETS[reaction_set][4],  # 🔵 (inner left)
-                        REACTION_SETS[reaction_set][5]   # 🔴 (inner right)
-                    ])
+                    reactions = (                                                    # From outside in:
+                        REACTION_SETS[used_reaction_set][0],  # 🟦 (far left)
+                        REACTION_SETS[used_reaction_set][1],  # 🟥 (far right)
+                        REACTION_SETS[used_reaction_set][4],  # 🔵 (inner left)
+                        REACTION_SETS[used_reaction_set][5]   # 🔴 (inner right)
+                    )
                 elif match_type == 'BO5':
                     options = [
                         f"{team1} 3-0", f"{team1} 3-1", f"{team1} 3-2",
                         f"{team2} 3-2", f"{team2} 3-1", f"{team2} 3-0"
                     ]
-                    reactions = tuple(REACTION_SETS[reaction_set])  # All six emojis
+                    reactions = REACTION_SETS[used_reaction_set][:6]  # All six emojis
 
                 # Get the prediction that corresponds to the removed reaction
                 if str(payload.emoji.name) in reactions:
