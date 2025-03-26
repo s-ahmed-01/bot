@@ -1076,6 +1076,7 @@ async def on_raw_reaction_add(payload):
                                 print("Partial match detected, awarding 0 points")
                                 points_awarded = 0
                             else:
+                                print(user_selections == correct_answers)
                                 points_awarded = points_value if user_selections == correct_answers else 0
                         # Award points
                         cursor.execute('''
