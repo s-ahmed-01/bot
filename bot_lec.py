@@ -1060,24 +1060,18 @@ async def on_raw_reaction_add(payload):
                         user_selections = set(json.loads(user_selections_json))
                         print(user_selections)  # Convert user answers
 
-                        if len(correct_answers) > required_answers:
-                            # If only one answer is expected, allow any one correct answer
-                            if user_selections.issubset(correct_answers):
-                                print("why here?")  # Intersection (checks if at least one is correct)
-                                points_awarded = points_value  # Full points for selecting at least one
-                            else:
-                                points_awarded = 0  # No points if none were correct
+                        if len(correct_answers) == required_answers:
+                            # For exact number of required answers, need exact match
+                            points_awarded = points_value if user_selections == correct_answers else 0
+                            print(f"Exact match required. Match found: {user_selections == correct_answers}")
                         else:
-                            print("ok i somewhat work")
-                            # Default behavior: Require an exact match of all correct answers
-                            print(user_selections.issubset(correct_answers))
-                            print(user_selections != correct_answers)
-                            if user_selections.issubset(correct_answers) and user_selections != correct_answers:
-                                print("Partial match detected, awarding 0 points")
-                                points_awarded = 0
+                            # For more answers than required, must be valid subset AND have correct number of answers
+                            if len(user_selections) == required_answers and user_selections.issubset(correct_answers):
+                                points_awarded = points_value
                             else:
-                                print(user_selections == correct_answers)
-                                points_awarded = points_value if user_selections == correct_answers else 0
+                                points_awarded = 0
+                            print(f"Subset check: selections={len(user_selections)}, required={required_answers}, valid subset={user_selections.issubset(correct_answers)}")
+
                         # Award points
                         cursor.execute('''
                         UPDATE bonus_answers
@@ -1091,7 +1085,7 @@ async def on_raw_reaction_add(payload):
                         VALUES (?, ?, ?)
                         ON CONFLICT(user_id, match_week) DO UPDATE SET
                             weekly_points = leaderboard.weekly_points + ?
-                        ''', (user_id, match_week, points, points))
+                        ''', (user_id, match_week, points_awarded, points_awarded))
                         conn.commit()
 
                         if points_awarded > 0:
