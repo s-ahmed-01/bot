@@ -138,7 +138,11 @@ TOURNAMENT_STAGES = {
     3: ('Week 3', 3),
     4: ('Week 4', 4),
     5: ('Week 5', 5),
-    6: ('Week 6', 6)
+    6: ('Week 6', 6),
+    7: ('Week 7', 7),
+    8: ('Week 8', 8),
+    9: ('Week 9', 9),
+    10: ('Week 10', 10)
 }
 
 def is_mod_channel(ctx):
@@ -1514,7 +1518,7 @@ async def matches(ctx):
     await ctx.send(matches_message)
 
 @bot.command()
-async def predictions(ctx, match_week: str = None):
+async def predictions(ctx, match_week: int = None):
     """
     Shows a user's predictions for a specific match week.
     If no match_week is provided, it defaults to the latest match week the user has predicted for.
@@ -1523,6 +1527,13 @@ async def predictions(ctx, match_week: str = None):
         user_id = ctx.author.id
         bot_channel_id = 1346615855408091180  # Replace with your bot channel ID
         bot_channel = bot.get_channel(bot_channel_id)
+
+        if isinstance(match_week, str):
+            try:
+                match_week = int(match_week)
+            except ValueError:
+                await bot_channel.send("Please provide a valid week number (e.g., 1, 2, 3)")
+                return
 
         # If no match_week is provided, get the latest match week the user has predicted for
         if match_week is None:
