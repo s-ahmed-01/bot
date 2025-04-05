@@ -252,52 +252,40 @@ async def update_leaderboard():
 
             # Usage in update_leaderboard function
             sorted_users = tie_breaker(leaderboard_dict, latest_week)
-            leaderboard_message = "**🏆 Leaderboard 🏆**\n\n"
+            chunks = []
+            current_chunk = "**🏆 Leaderboard 🏆**\n\n"
+            char_count = len(current_chunk)
+
             for rank, user_id in enumerate(sorted_users, start=1):
                 data = leaderboard_dict[user_id]
-                # Get username from DB or Discord API
                 username = user_data.get(user_id)
-                if not username:  # If username is missing from DB, fetch from Discord
+                if not username:
                     try:
                         user = await bot.fetch_user(user_id)
                         username = user.name
                     except:
-                        username = f"Unknown ({user_id})"  # Fallback if user cannot be fetched
+                        username = f"Unknown ({user_id})"
 
                 week_scores = " | ".join(f"Week {week}: {points}" for week, points in sorted(data["weeks"].items()))
-                leaderboard_message += f"{rank}. **{username}** - {week_scores} | **Total: {data['total']}**\n"
+                entry = f"{rank}. **{username}** - {week_scores} | **Total: {data['total']}**\n"
 
+                # If adding this entry would exceed Discord's limit, start a new chunk
+                if char_count + len(entry) > 1900:
+                    chunks.append(current_chunk)
+                    current_chunk = entry
+                    char_count = len(entry)
+                else:
+                    current_chunk += entry
+                    char_count += len(entry)
 
-        try:
-            # First try to find existing message with fresh fetch
-            existing_message = None
-            try:
-                await leaderboard_channel.purge(check=lambda m: m.author == bot.user and "🏆 Leaderboard 🏆" in m.content, limit=10)
-                async for message in leaderboard_channel.history(limit=10):
-                    if message.author == bot.user and "🏆 Leaderboard 🏆" in message.content:
-                        try:
-                            # Verify message still exists
-                            existing_message = await leaderboard_channel.fetch_message(message.id)
-                            print(f"Found existing leaderboard message with ID: {message.id}")
-                            break
-                        except discord.NotFound:
-                            continue  # Message doesn't exist, keep looking
-            except discord.NotFound:
-                existing_message = None
+            # Add the final chunk
+            if current_chunk:
+                chunks.append(current_chunk)
 
-            # Create new message if none found
-            if not existing_message:
-                new_message = await leaderboard_channel.send(leaderboard_message)
-                print(f"Created new leaderboard message with ID: {new_message.id}")
-            else:
-                try:
-                    await existing_message.edit(content=leaderboard_message)
-                    print(f"Updated existing leaderboard message with ID: {existing_message.id}")
-                except discord.NotFound:
-                    new_message = await leaderboard_channel.send(leaderboard_message)
-                    print(f"Previous message not found, created new with ID: {new_message.id}")
-        except Exception as e:
-            print(f"Error updating leaderboard: {e}")
+            # Delete existing messages and send new ones
+            await leaderboard_channel.purge(check=lambda m: m.author == bot.user)
+            for chunk in chunks:
+                await leaderboard_channel.send(chunk)
 
     except Exception as e:
         print(f"Error updating leaderboard: {e}")
