@@ -1948,7 +1948,7 @@ async def predictions_table(ctx, match_date: str):
         
         # Draw predictions
         y = header_height + row_height + padding
-        for i, (username, total_points) in enumerate(users):
+        for i, (username, total_points, weekly_scores) in enumerate(users):
             # Determine background color based on position
             if total_points in scores[:3]:
                 position = scores.index(total_points)
@@ -1983,7 +1983,7 @@ async def predictions_table(ctx, match_date: str):
 
 @bot.command()
 @commands.check(is_mod_channel)
-async def add_prediction(ctx, username: str, match_date: int, team1: str, team2: str, pred_winner: str, pred_score: str):
+async def add_prediction(ctx, username: str, match_date: str, team1: str, team2: str, pred_winner: str, pred_score: str):
     """
     Manually add a prediction for a user.
     Usage: !add_prediction <username> <DD-MM> <team1> <team2> <predicted_winner> <predicted_score>
