@@ -1855,14 +1855,28 @@ async def close_channel(ctx):
 async def predictions_table(ctx, match_date: str):
     """Creates an image showing all predictions for matches on a given date."""
     try:
-        bot_channel_id = 1346615855408091180  # Replace with your bot channel ID
+        bot_channel_id = 1346615855408091180
         bot_channel = bot.get_channel(bot_channel_id)
-        # Convert date format
         match_date_obj = datetime.strptime(match_date, "%d-%m")
         current_year = datetime.now().year
         match_date_with_year = match_date_obj.replace(year=current_year).strftime("%Y-%m-%d")
 
-        # Get all matches for the date
+        # Get all users, not just those who predicted
+        cursor.execute('''
+        WITH UserPoints AS (
+            SELECT u.user_id, u.username, COALESCE(SUM(l.weekly_points), 0) as total_points,
+                GROUP_CONCAT(l.match_week || ':' || l.weekly_points) as weekly_scores
+            FROM users u
+            LEFT JOIN leaderboard l ON u.user_id = l.user_id
+            GROUP BY u.user_id, u.username
+        )
+        SELECT username, total_points, weekly_scores
+        FROM UserPoints
+        ORDER BY total_points DESC, weekly_scores DESC
+        ''')
+        users = cursor.fetchall()
+
+        # Get matches for the date
         cursor.execute('''
         SELECT id, team1, team2, match_type
         FROM matches
@@ -1871,37 +1885,21 @@ async def predictions_table(ctx, match_date: str):
         ''', (match_date_with_year,))
         matches = cursor.fetchall()
 
-        if not matches:
-            await ctx.send(f"No matches found for {match_date}")
-            return
-        print(f"Found matches: {matches}")
-
-        cursor.execute('''
-        SELECT DISTINCT u.username, 
-               COALESCE(SUM(l.weekly_points), 0) as total_points
-        FROM predictions p
-        JOIN users u ON p.user_id = u.user_id
-        LEFT JOIN leaderboard l ON u.user_id = l.user_id
-        WHERE p.match_id IN (SELECT id FROM matches WHERE match_date = ?)
-        GROUP BY u.username
-        ORDER BY total_points DESC
-        ''', (match_date_with_year,))
-        users = cursor.fetchall()
-
-        # Create image
-        width = 200 + (len(matches) * 100)  # Wider columns
+        # Image dimensions
+        width = 200 + (len(matches) * 100)
         header_height = 60
-        row_height = 30  # Taller rows
+        row_height = 30
         column_width = 100
         username_width = 150
         points_width = 100
+        grid_color = 'gray'
         line_thickness = 1
         padding = 10
-        
+
         total_rows = len(users)
         height = header_height + (row_height * (total_rows + 1)) + padding
 
-        # Create image with white background
+        # Create image
         img = Image.new('RGB', (width, height), color='white')
         draw = ImageDraw.Draw(img)
         
@@ -1914,10 +1912,20 @@ async def predictions_table(ctx, match_date: str):
         draw.rectangle([0, 0, width, header_height], fill='lightblue')
         draw.text((padding, 20), f"Predictions for {match_date}", font=font, fill='black')
 
-        for i in range(total_rows + 2):  # +2 for header and column titles
-            y_pos = header_height + (i * row_height)
-            draw.line([(0, y_pos), (width, y_pos)], fill='gray', width=line_thickness)
+        # Draw grid
+        # Vertical lines
+        x = username_width
+        draw.line([(x, header_height), (x, height)], fill=grid_color, width=line_thickness)
+        x += points_width
+        draw.line([(x, header_height), (x, height)], fill=grid_color, width=line_thickness)
+        for i in range(len(matches)):
+            x += column_width
+            draw.line([(x, header_height), (x, height)], fill=grid_color, width=line_thickness)
 
+        # Horizontal lines
+        for i in range(total_rows + 2):
+            y = header_height + (i * row_height)
+            draw.line([(0, y), (width, y)], fill=grid_color, width=line_thickness)
 
         # Draw column headers
         y = header_height + padding
@@ -1928,14 +1936,28 @@ async def predictions_table(ctx, match_date: str):
             draw.text((x, y), f"{match[1]} vs {match[2]}", font=font, fill='black')
             x += column_width
 
-        # Get and draw predictions
-        y += row_height + padding + header_height
+        # Colors for top positions
+        position_colors = {
+            0: '#FFD700',  # Gold
+            1: '#C0C0C0',  # Silver
+            2: '#CD7F32'   # Bronze
+        }
 
-        row_count = 0
-        for username, total_points in users:
-            print(f"Drawing row {row_count + 1}: {username}")
+        # Get top 3 scores to handle ties
+        scores = sorted(set(points for _, points in users), reverse=True)[:3]
+        
+        # Draw predictions
+        y = header_height + row_height + padding
+        for i, (username, total_points) in enumerate(users):
+            # Determine background color based on position
+            if total_points in scores[:3]:
+                position = scores.index(total_points)
+                bg_color = position_colors[position]
+                draw.rectangle([0, y-padding, width, y+row_height-padding], fill=bg_color)
+
             draw.text((padding, y), username, font=font, fill='black')
             draw.text((username_width + padding, y), str(total_points), font=font, fill='black')
+            
             x = username_width + points_width + padding
             for match in matches:
                 cursor.execute('''
@@ -1945,17 +1967,12 @@ async def predictions_table(ctx, match_date: str):
                 WHERE match_id = ? AND users.username = ?
                 ''', (match[0], username))
                 pred = cursor.fetchone()
-                if pred:
-                    pred_text = f"{pred[0]} {pred[1]}"
-                else:
-                    pred_text = "No prediction"
+                pred_text = f"{pred[0]} {pred[1]}" if pred else "No prediction"
                 draw.text((x, y), pred_text, font=font, fill='black')
                 x += column_width
             y += row_height
-            row_count += 1
-        print(f"Total rows drawn: {row_count}")
 
-        # Convert image to bytes
+        # Save and send image
         with io.BytesIO() as image_binary:
             img.save(image_binary, 'PNG')
             image_binary.seek(0)
@@ -1966,7 +1983,7 @@ async def predictions_table(ctx, match_date: str):
 
 @bot.command()
 @commands.check(is_mod_channel)
-async def add_prediction(ctx, username: str, match_date: str, team1: str, team2: str, pred_winner: str, pred_score: str):
+async def add_prediction(ctx, username: str, match_date: int, team1: str, team2: str, pred_winner: str, pred_score: str):
     """
     Manually add a prediction for a user.
     Usage: !add_prediction <username> <DD-MM> <team1> <team2> <predicted_winner> <predicted_score>
@@ -2011,7 +2028,7 @@ async def add_prediction(ctx, username: str, match_date: str, team1: str, team2:
         ON CONFLICT(user_id, match_id) DO UPDATE SET
             pred_winner = excluded.pred_winner,
             pred_score = excluded.pred_score
-        ''', (user_id, match_id, match_week, pred_winner, pred_score))
+        ''', (user_id, match_id, int(match_week), pred_winner, pred_score))
 
         conn.commit()
         await ctx.send(f"✅ Added prediction for {username}: {pred_winner} {pred_score} in {team1} vs {team2}")
