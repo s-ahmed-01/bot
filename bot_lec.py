@@ -1944,7 +1944,7 @@ async def predictions_table(ctx, match_date: str):
         }
 
         # Get top 3 scores to handle ties
-        scores = sorted(set(points for _, points in users), reverse=True)[:3]
+        scores = sorted(set(points for _, points, _ in users), reverse=True)[:3]
         
         # Draw predictions
         y = header_height + row_height + padding
