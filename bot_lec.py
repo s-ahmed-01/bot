@@ -266,7 +266,7 @@ async def update_leaderboard():
                     except:
                         username = f"Unknown ({user_id})"
 
-                week_scores = " | ".join(f"Week {week}: {points}" for week, points in sorted(data["weeks"].items()))
+                week_scores = " | ".join(f"W{week}: {points}" for week, points in sorted(data["weeks"].items()))
                 entry = f"{rank}. **{username}** - {week_scores} | **Total: {data['total']}**\n"
 
                 # If adding this entry would exceed Discord's limit, start a new chunk
@@ -1886,14 +1886,14 @@ async def predictions_table(ctx, match_date: str):
         matches = cursor.fetchall()
 
         # Image dimensions
-        width = 200 + (len(matches) * 100)
+        width = 200 + (len(matches) * 150)
         header_height = 60
         row_height = 30
-        column_width = 100
+        column_width = 150
         username_width = 150
         points_width = 100
         grid_color = 'gray'
-        line_thickness = 1
+        line_thickness = 2
         padding = 10
 
         total_rows = len(users)
@@ -1904,7 +1904,7 @@ async def predictions_table(ctx, match_date: str):
         draw = ImageDraw.Draw(img)
         
         try:
-            font = ImageFont.truetype("arial.ttf", 16)
+            font = ImageFont.truetype("arial.ttf", 20)
         except:
             font = ImageFont.load_default()
 
@@ -1971,10 +1971,12 @@ async def predictions_table(ctx, match_date: str):
                 draw.text((x, y), pred_text, font=font, fill='black')
                 x += column_width
             y += row_height
+        
+        img = img.resize((width, height), Image.LANCZOS)
 
         # Save and send image
         with io.BytesIO() as image_binary:
-            img.save(image_binary, 'PNG')
+            img.save(image_binary, 'PNG', quality=95, optimize=True)
             image_binary.seek(0)
             await bot_channel.send(file=discord.File(fp=image_binary, filename='predictions.png'))
 
