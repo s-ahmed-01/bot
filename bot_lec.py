@@ -1904,7 +1904,7 @@ async def predictions_table(ctx, match_date: str):
         draw = ImageDraw.Draw(img)
         
         try:
-            font = ImageFont.truetype("arial.ttf", 20)
+            font = ImageFont.truetype("arial.ttf", 36)
         except:
             font = ImageFont.load_default()
 
