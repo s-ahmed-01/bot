@@ -349,7 +349,7 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
         current_year = datetime.now().year
         match_date_with_year = parsed_date.replace(year=current_year)
 
-        cursor.execute("SELECT date, match_week FROM bonus_questions ORDER BY match_week DESC")
+        cursor.execute("SELECT date, match_week FROM matches ORDER BY match_week DESC")
         existing_matches = cursor.fetchall()
 
         match_week = 1  # Default to week 1 if no matches exist
@@ -1789,7 +1789,7 @@ async def schedule_poll_deletion(ctx, match_date: str):
 
         # Schedule task
         scheduler.add_job(delete_polls, "date", run_date=deletion_time_utc, args=[match_date])
-        await ctx.send(f"Poll deletion for {match_date} scheduled at 8 AM UK time.")
+        await ctx.send(f"Poll deletion for {match_date} scheduled at 4 PM UK time.")
 
     except Exception as e:
         await ctx.send(f"Error scheduling poll deletion: {e}")
