@@ -349,7 +349,7 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
         current_year = datetime.now().year
         match_date_with_year = parsed_date.replace(year=current_year)
 
-        cursor.execute("SELECT date, match_week FROM matches ORDER BY match_week DESC")
+        cursor.execute("SELECT match_date, match_week FROM matches ORDER BY match_week DESC")
         existing_matches = cursor.fetchall()
 
         match_week = 1  # Default to week 1 if no matches exist
@@ -1593,7 +1593,7 @@ async def predictions(ctx, match_week: int = None):
         if bonus_predictions:
             for date, question, answer, points in bonus_predictions:
                 if answer:
-                    answer_text = f"{json.loads(answer)} (Points: {points if points else 0})"
+                    answer_text = f"{json.loads(answer)[0]} (Points: {points if points else 0})"
                 else:
                     answer_text = "No response given."
 
