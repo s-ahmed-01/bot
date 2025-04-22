@@ -1828,9 +1828,13 @@ async def announce(ctx):
         # Send original version with ping to ping channel
         await announcement_channel2.send(content)
 
-
+        overwrite = discord.PermissionOverwrite()
+        overwrite.send_messages = False
+        overwrite.read_messages = True
+        overwrite.add_reactions = True
+        overwrite.view_channel = True
         # Close (make poll channel private)
-        await poll_channel.set_permissions(ctx.guild.default_role, view_channel=True)
+        await poll_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
         await ctx.send(f"📢 Announcement sent in {announcement_channel.mention}, and {poll_channel.mention} is now **open**!")
 
     except Exception as e:
@@ -1844,7 +1848,13 @@ async def close_channel(ctx):
         poll_channel_id = 1346615134885253181  # Replace with actual channel IDs        
         poll_channel = bot.get_channel(poll_channel_id)
         # Make the channel private
-        await poll_channel.set_permissions(ctx.guild.default_role, view_channel=False)
+        overwrite = discord.PermissionOverwrite()
+        overwrite.send_messages = False
+        overwrite.read_messages = True
+        overwrite.add_reactions = True
+        overwrite.view_channel = False
+
+        await poll_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
         await ctx.send(f"🔒 {poll_channel.mention} is now **private**.")
 
     except Exception as e:
