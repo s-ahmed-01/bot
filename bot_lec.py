@@ -349,13 +349,13 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
         current_year = datetime.now().year
         match_date_with_year = parsed_date.replace(year=current_year)
 
-        cursor.execute("SELECT match_date, match_week FROM matches ORDER BY match_week DESC")
+        cursor.execute("SELECT match_date, match_week FROM matches ORDER BY match_week DESC LIMIT 1")
         existing_matches = cursor.fetchall()
 
         match_week = 1  # Default to week 1 if no matches exist
 
-        if existing_matches:
-            last_match_date, last_match_week = existing_matches[-1]
+        if existing_matches and len(existing_matches) > 0:
+            last_match_date, last_match_week = existing_matches[0]
             last_match_date = datetime.strptime(last_match_date, "%Y-%m-%d")
 
             # If new match is within 2 days of the last scheduled match, keep the same week
