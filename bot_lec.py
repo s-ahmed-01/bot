@@ -893,7 +893,7 @@ async def on_raw_reaction_add(payload):
             option_split = [option.strip() for option in options.split(",")]
             NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
             reactions = NUMBER_EMOJIS[:len(option_split)]
-            
+
             if str(payload.emoji.name) not in reactions and str(payload.emoji.name) != "✅":
                 await message.channel.send("Invalid reaction. Please select a valid option.")
                 return
@@ -1595,7 +1595,7 @@ async def predictions(ctx, match_week: int = None):
         if bonus_predictions:
             for date, question, answer, points in bonus_predictions:
                 if answer:
-                    answer_text = f"{json.loads(answer)[0]} (Points: {points if points else 0})"
+                    answer_text = f"{json.loads(answer)} (Points: {points if points else 0})"
                 else:
                     answer_text = "No response given."
 
