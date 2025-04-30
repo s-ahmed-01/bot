@@ -891,8 +891,9 @@ async def on_raw_reaction_add(payload):
 
             question_id, week, options, required_answers, points_value = question_row
             option_split = [option.strip() for option in options.split(",")]
-            reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
-
+            NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+            reactions = NUMBER_EMOJIS[:len(option_split)]
+            
             if str(payload.emoji.name) not in reactions and str(payload.emoji.name) != "✅":
                 await message.channel.send("Invalid reaction. Please select a valid option.")
                 return
