@@ -461,7 +461,8 @@ async def create_polls(ctx):
                 match_date = datetime.strptime(match_date, "%Y-%m-%d").date()
 
             option_split = [option.strip() for option in options.split(",")]
-            reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
+            NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+            reactions = NUMBER_EMOJIS[:len(option_split)]
 
             # Add date header if the date changes
             if match_date != current_date:
@@ -542,7 +543,7 @@ async def create_bonus_poll(prediction_channel, result_channel, question_id, que
         color=discord.Color.orange()
     )
     for i, option in enumerate(options, start=1):
-        result_embed.add_field(name=f"Option {i}", value=option, inline=False)
+        result_embed.add_field(name=f"Option {i-1}", value=option, inline=False)
 
     result_message = await result_channel.send(embed=result_embed)
     for reaction in reactions:
