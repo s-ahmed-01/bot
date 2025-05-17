@@ -104,7 +104,8 @@ CREATE TABLE IF NOT EXISTS bonus_questions (
     date DATE,
     match_week INTEGER NOT NULL,
     poll_created BOOLEAN DEFAULT FALSE,
-    points INTEGER NOT NULL
+    points INTEGER NOT NULL,
+    reaction_type TEXT
 );
 
 ''')
@@ -143,6 +144,19 @@ TOURNAMENT_STAGES = {
     8: ('Week 8', 8),
     9: ('Week 9', 9),
     10: ('Week 10', 10)
+}
+
+TEAM_EMOTES = {
+    "KOI": "<:Koi:330749930167603311>",
+    "SK": "<:SK:1330750495169445928>",
+    "FNC": "<:Fnatic:1330750485568946317>",
+    "G2": "<:G2:1330750487762440222>",
+    "TH": "<:Heretics:1330750491046445106>",
+    "RGE": "<:Rogue:1330750493839855686>",
+    "VIT": "<:Vitality:1330750496557760624>",
+    "GX": "<:GiantX:1330750489285103616>",
+    "KC": "<:KC:1330750492552466463>",
+    "BDS": "<:BDS:1330750484251938818>"
 }
 
 def is_mod_channel(ctx):
@@ -331,14 +345,14 @@ async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str
         ''', (match_date_with_year.strftime("%Y-%m-%d"), match_type.upper(), team1, team2, match_week, winner_points, scoreline_points))
         conn.commit()
 
-        await ctx.send(f"✅ Match scheduled: {team1} vs {team2} on {match_date_with_year.strftime('%d-%m')} (Week {match_week})")
+        await ctx.send(f"Match scheduled: {team1} vs {team2} on {match_date_with_year.strftime('%d-%m')} (Week {match_week})")
 
     except ValueError:
-        await ctx.send("❌ Invalid date format. Please use DD-MM.")
+        await ctx.send("Invalid date format. Please use DD-MM.")
 
 @bot.command()
 @commands.check(is_mod_channel)
-async def add_bonus_question(ctx, date: str, question: str, description: str, options: str, required_answers: int = 1, points: int = 1):
+async def add_bonus_question(ctx, date: str, question: str, description: str, options: str, reaction_type: str = "numbered", required_answers: int = 1, points: int = 1):
     """
     Adds a bonus question to the database.
     Requires:
@@ -348,6 +362,10 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
         parsed_date = datetime.strptime(date, "%d-%m")
         current_year = datetime.now().year
         match_date_with_year = parsed_date.replace(year=current_year)
+
+        if reaction_type.lower() not in ["numbered", "teams"]:
+            await ctx.send("Invalid reaction type. Use 'numbered' or 'teams'")
+            return
 
         cursor.execute("SELECT match_date, match_week FROM matches ORDER BY match_week DESC LIMIT 1")
         existing_matches = cursor.fetchall()
@@ -365,9 +383,9 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
                 match_week = last_match_week + 1
 
         cursor.execute('''
-        INSERT INTO bonus_questions (date, question, description, options, required_answers, points, match_week)
+        INSERT INTO bonus_questions (date, question, description, options, required_answers, points, match_week, reaction_type)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-        ''', (match_date_with_year.strftime("%Y-%m-%d"), question, description, options, required_answers, points, match_week))
+        ''', (match_date_with_year.strftime("%Y-%m-%d"), question, description, options, required_answers, points, match_week, reaction_type))
         conn.commit()
 
         await ctx.send(f"Bonus question added for {date}: {question}")
@@ -397,7 +415,7 @@ async def create_polls(ctx):
 
         # Fetch bonus questions that have not had polls created yet
         cursor.execute('''
-        SELECT id, date, question, description, options, points
+        SELECT id, date, question, description, options, points, reaction_type
         FROM bonus_questions
         WHERE poll_created = FALSE
         ORDER BY date
@@ -455,14 +473,25 @@ async def create_polls(ctx):
 
         # --- Create polls for bonus questions ---
         for question in bonus_questions:
-            question_id, match_date, question_text, description, options, point_value = question
+            question_id, match_date, question_text, description, options, point_value, reaction_type = question
 
             if isinstance(match_date, str):
                 match_date = datetime.strptime(match_date, "%Y-%m-%d").date()
 
             option_split = [option.strip() for option in options.split(",")]
-            NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-            reactions = NUMBER_EMOJIS[:len(option_split)]
+
+            if reaction_type.lower() == "teams":
+                # Try to get emotes for each team
+                reactions = []
+                for team in option_split:
+                    if team in TEAM_EMOTES:
+                        reactions.append(TEAM_EMOTES[team])
+                    else:
+                        await ctx.send(f"❌ No emote found for team: {team}")
+                        return
+            else:
+                NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+                reactions = NUMBER_EMOJIS[:len(option_split)]
 
             # Add date header if the date changes
             if match_date != current_date:
@@ -771,7 +800,7 @@ async def on_raw_reaction_add(payload):
                 existing_result = cursor.fetchone()
                 
                 if existing_result:
-                    await message.channel.send("⚠️ Result has already been recorded for this match.")
+                    await message.channel.send("Result has already been recorded for this match.")
                     return
 
                 # Handle result poll
@@ -789,7 +818,7 @@ async def on_raw_reaction_add(payload):
                         used_reaction_set = set_name
                         break
                 if used_reaction_set is None:
-                    await message.channel.send("❌ Invalid reaction type")
+                    await message.channel.send("Invalid reaction type")
                     return
 
                 if match_type == 'BO1':
@@ -816,7 +845,7 @@ async def on_raw_reaction_add(payload):
                     result = options[selected_index]
                     winner, score = result.split(" ", 1)
                 else:
-                    await message.channel.send("❌ Invalid reaction for this match type")
+                    await message.channel.send("Invalid reaction for this match type")
                     return
 
                 # Update match result in the database
@@ -1099,9 +1128,9 @@ async def on_raw_reaction_add(payload):
                     # --- **Send Final Result Message** ---
                     correct_answer_text = ", ".join(correct_answers)
                     if awarded_users:
-                        await message.channel.send(f"✅ Points awarded! The correct answer was: {correct_answer_text}.")
+                        await message.channel.send(f"Points awarded! The correct answer was: {correct_answer_text}.")
                     else:
-                        await message.channel.send(f"❌ No users selected the correct answer. The correct answer was: {correct_answer_text}.")
+                        await message.channel.send(f"No users selected the correct answer. The correct answer was: {correct_answer_text}.")
 
                     await update_leaderboard()
     except Exception as e:
@@ -1135,20 +1164,28 @@ async def on_raw_reaction_remove(payload):
             return
 
         if "Bonus Question" in title:
-            question_text = title.split(":")[1].strip()
-
             cursor.execute('''
-            SELECT id, options FROM bonus_questions
-            WHERE question = ?
+                SELECT id, options, reaction_type, match_week FROM bonus_questions
+                WHERE question = ?
             ''', (question_text,))
             question_row = cursor.fetchone()
+
+            question_id, options, reaction_type, match_week = question_row
+            question_text = title.split(":")[1].strip()
 
             if not question_row:
                 return
 
-            question_id, options = question_row
             option_split = [option.strip() for option in options.split(",")]
-            reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
+            if reaction_type == "numbered":
+                reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
+            elif reaction_type == "teams":
+                    option_teams = [team.strip() for team in options.split(",")]
+                    # Try to get emotes for each team
+                    reactions = []
+                    for team in option_teams:
+                        if team in TEAM_EMOTES:
+                            reactions.append(TEAM_EMOTES[team])
 
             if str(payload.emoji.name) not in reactions:
                 return
@@ -1185,31 +1222,81 @@ async def on_raw_reaction_remove(payload):
             conn.commit()
 
         elif "Bonus Result" in title:
-        # Only proceed if we haven't awarded points yet
-            if str(payload.emoji.name) != "✅":  # If not the finalize emoji
                 # Get question details
-                cursor.execute('''
-                SELECT correct_answer FROM bonus_questions
-                WHERE id = ?
-                ''', (question_id,))
-                answer_row = cursor.fetchone()
+            cursor.execute('''
+            SELECT id, options, reaction_type, correct_answer, match_week FROM bonus_questions
+            WHERE id = ?
+            ''', (question_id,))
+            question_row = cursor.fetchone()
+            
+            if not question_row:
+                return
+        
+            question_id, options, reaction_type, answer_data, match_week = question_row
 
-                if answer_row and answer_row[0]:
-                    correct_answers = set(json.loads(answer_row[0]))
-                    # Map emoji to option
-                    selected_option = dict(zip(reactions, option_split)).get(str(payload.emoji.name))
-                    
-                    if selected_option and selected_option in correct_answers:
-                        correct_answers.remove(selected_option)
-                        # Update the database with new correct answers
-                        correct_answers_json = json.dumps(list(correct_answers))
+            option_split = [option.strip() for option in options.split(",")]
+            if reaction_type == "numbered":
+                reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
+            elif reaction_type == "teams":
+                    # Try to get emotes for each team
+                reactions = []
+                for team in option_split:
+                    if team in TEAM_EMOTES:
+                        reactions.append(TEAM_EMOTES[team])
+
+            # Only proceed if we haven't awarded points yet
+            if str(payload.emoji.name) == "✅":  # If the finalize emoji
+                cursor.execute('BEGIN TRANSACTION')
+                try:
+                    # Get all users who got points for this question
+                    cursor.execute('''
+                    SELECT user_id, points FROM bonus_answers 
+                    WHERE question_id = ? AND points > 0
+                    ''', (question_id,))
+                    awarded_users = cursor.fetchall()
+
+                    # Remove points from bonus_answers
+                    cursor.execute('''
+                    UPDATE bonus_answers 
+                    SET points = 0 
+                    WHERE question_id = ?
+                    ''', (question_id,))
+
+                    # Remove points from leaderboard
+                    for user_id, points in awarded_users:
                         cursor.execute('''
-                        UPDATE bonus_questions
-                        SET correct_answer = ?
-                        WHERE id = ?
-                        ''', (correct_answers_json, question_id))
-                        conn.commit()
-                        await print(f"✅ Removed {selected_option} from correct answers.")
+                        UPDATE leaderboard 
+                        SET weekly_points = weekly_points - ? 
+                        WHERE user_id = ? AND match_week = ?
+                        ''', (points, user_id, match_week))
+
+                    cursor.execute('COMMIT')
+                    await update_leaderboard()
+                    return
+                except Exception as e:
+                    cursor.execute('ROLLBACK')
+                    print(f"Error during transaction: {e}")
+                    return
+
+            elif str(payload.emoji.name) in reactions:
+        # Only proceed if tick is not present
+                if not any(r.emoji == "✅" for r in message.reactions):
+                    if answer_data:
+                        correct_answers = set(json.loads(answer_data))
+                        selected_option = dict(zip(reactions, option_split)).get(str(payload.emoji.name))
+                            
+                        if selected_option and selected_option in correct_answers:
+                            correct_answers.remove(selected_option)
+                            # Update database with new correct answers
+                            correct_answers_json = json.dumps(list(correct_answers))
+                            cursor.execute('''
+                            UPDATE bonus_questions
+                            SET correct_answer = ?
+                            WHERE id = ?
+                            ''', (correct_answers_json, question_id))
+                            conn.commit()
+
+        
         
         elif "Match Poll" in title:
             try:
@@ -1595,12 +1682,12 @@ async def predictions(ctx, match_week: int = None):
         if bonus_predictions:
             for date, question, answer, points in bonus_predictions:
                 if answer:
-                    answer_text = f"{json.loads(answer)} (Points: {points if points else 0})"
+                    answer_text = f"{json.loads(answer)[0]} (Points: {points if points else 0})"
                 else:
                     answer_text = "No response given."
 
                 embed.add_field(
-                    name=f"❓ {question} - {date}",
+                    name=f"{question} - {date}",
                     value=answer_text,
                     inline=False
                 )
@@ -1643,7 +1730,7 @@ async def voting_summary(ctx, match_date: str):
         current_year = datetime.now().year
         match_date_with_year = match_date_obj.replace(year=current_year).strftime("%Y-%m-%d")
 
-        summary_message = f"**📊 Voting Summary for {match_date_with_year}**\n"
+        summary_message = f"**Voting Summary for {match_date_with_year}**\n"
 
         # ---- MATCH VOTING SUMMARY ----
         cursor.execute('''
@@ -1672,7 +1759,7 @@ async def voting_summary(ctx, match_date: str):
                 else:
                     summary_message += "   No votes recorded for this match.\n"
         else:
-            summary_message += "\n⚠ No matches found for this date.\n"
+            summary_message += "\nNo matches found for this date.\n"
 
         # ---- BONUS QUESTION VOTING SUMMARY ----
         cursor.execute('''
@@ -1715,7 +1802,7 @@ async def voting_summary(ctx, match_date: str):
         await ctx.send(summary_message)
 
     except ValueError:
-        await ctx.send("❌ Invalid date format! Please use DD-MM.")
+        await ctx.send("Invalid date format! Please use DD-MM.")
 
 
 
@@ -1837,10 +1924,10 @@ async def announce(ctx):
         overwrite.view_channel = True
         # Close (make poll channel private)
         await poll_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
-        await ctx.send(f"📢 Announcement sent in {announcement_channel.mention}, and {poll_channel.mention} is now **open**!")
+        await ctx.send(f"Announcement sent in {announcement_channel.mention}, and {poll_channel.mention} is now **open**!")
 
     except Exception as e:
-        await ctx.send(f"❌ Error: {e}")
+        await ctx.send(f"Error: {e}")
 
 @bot.command()
 @commands.check(is_mod_channel)
@@ -1857,10 +1944,10 @@ async def close_channel(ctx):
         overwrite.view_channel = False
 
         await poll_channel.set_permissions(ctx.guild.default_role, overwrite=overwrite)
-        await ctx.send(f"🔒 {poll_channel.mention} is now **private**.")
+        await ctx.send(f"{poll_channel.mention} is now **private**.")
 
     except Exception as e:
-        await ctx.send(f"❌ Error: {e}")
+        await ctx.send(f"Error: {e}")
 
 
 @bot.command()
@@ -2012,7 +2099,7 @@ async def add_prediction(ctx, username: str, match_date: str, team1: str, team2:
         user_row = cursor.fetchone()
 
         if not user_row:
-            await ctx.send(f"❌ No user found with username: {username}")
+            await ctx.send(f"No user found with username: {username}")
             return
 
         user_id = user_row[0]
@@ -2030,7 +2117,7 @@ async def add_prediction(ctx, username: str, match_date: str, team1: str, team2:
         match_data = cursor.fetchone()
 
         if not match_data:
-            await ctx.send(f"❌ No match found for {team1} vs {team2} on {match_date}")
+            await ctx.send(f"No match found for {team1} vs {team2} on {match_date}")
             return
 
         match_id, match_week = match_data
@@ -2045,12 +2132,12 @@ async def add_prediction(ctx, username: str, match_date: str, team1: str, team2:
         ''', (user_id, match_id, int(match_week), pred_winner, pred_score))
 
         conn.commit()
-        await ctx.send(f"✅ Added prediction for {username}: {pred_winner} {pred_score} in {team1} vs {team2}")
+        await ctx.send(f"Added prediction for {username}: {pred_winner} {pred_score} in {team1} vs {team2}")
 
     except ValueError:
-        await ctx.send("❌ Invalid date format. Please use DD-MM.")
+        await ctx.send("Invalid date format. Please use DD-MM.")
     except Exception as e:
-        await ctx.send(f"❌ Error adding prediction: {e}")
+        await ctx.send(f"Error adding prediction: {e}")
 
 @bot.command()
 @commands.check(is_mod_channel)
@@ -2060,9 +2147,9 @@ async def update_board(ctx):
     """
     try:
         await update_leaderboard()
-        await ctx.send("✅ Leaderboard has been manually updated.")
+        await ctx.send("Leaderboard has been manually updated.")
     except Exception as e:
-        await ctx.send(f"❌ Error updating leaderboard: {e}")
+        await ctx.send(f"Error updating leaderboard: {e}")
 
 
 # Run bot
