@@ -572,7 +572,7 @@ async def create_bonus_poll(prediction_channel, result_channel, question_id, que
         color=discord.Color.orange()
     )
     for i, option in enumerate(options, start=1):
-        result_embed.add_field(name=f"Option {i-1}", value=option, inline=False)
+        result_embed.add_field(name=f"Option {i}", value=option, inline=False)
 
     result_message = await result_channel.send(embed=result_embed)
     for reaction in reactions:
@@ -1164,6 +1164,7 @@ async def on_raw_reaction_remove(payload):
             return
 
         if "Bonus Question" in title:
+            question_text = title.split(":")[1].strip()
             cursor.execute('''
                 SELECT id, options, reaction_type, match_week FROM bonus_questions
                 WHERE question = ?
@@ -1171,7 +1172,7 @@ async def on_raw_reaction_remove(payload):
             question_row = cursor.fetchone()
 
             question_id, options, reaction_type, match_week = question_row
-            question_text = title.split(":")[1].strip()
+            
 
             if not question_row:
                 return
@@ -1222,11 +1223,11 @@ async def on_raw_reaction_remove(payload):
             conn.commit()
 
         elif "Bonus Result" in title:
-                # Get question details
+            question_text = title.split(":")[1].strip()
             cursor.execute('''
             SELECT id, options, reaction_type, correct_answer, match_week FROM bonus_questions
-            WHERE id = ?
-            ''', (question_id,))
+            WHERE question = ?
+            ''', (question_text,))
             question_row = cursor.fetchone()
             
             if not question_row:
@@ -1682,7 +1683,7 @@ async def predictions(ctx, match_week: int = None):
         if bonus_predictions:
             for date, question, answer, points in bonus_predictions:
                 if answer:
-                    answer_text = f"{json.loads(answer)[0]} (Points: {points if points else 0})"
+                    answer_text = f"{json.loads(answer)} (Points: {points if points else 0})"
                 else:
                     answer_text = "No response given."
 
