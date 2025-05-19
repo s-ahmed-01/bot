@@ -1280,6 +1280,12 @@ async def on_raw_reaction_remove(payload):
                         WHERE user_id = ? AND match_week = ?
                         ''', (points, user_id, match_week))
 
+                    # Clear the correct answer
+                    cursor.execute('''
+                    UPDATE bonus_questions
+                    SET correct_answer = NULL 
+                    WHERE id = ?
+                    ''', (question_id,))
                     cursor.execute('COMMIT')
                     await update_leaderboard()
                     return
