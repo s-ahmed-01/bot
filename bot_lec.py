@@ -2167,6 +2167,44 @@ async def update_board(ctx):
     except Exception as e:
         await ctx.send(f"Error updating leaderboard: {e}")
 
+@bot.command()
+@commands.check(is_mod_channel)
+async def recalculate_weeks(ctx):
+    """Recalculates weekly points for all users based on stored predictions and bonus answers."""
+    try:
+        cursor.execute('BEGIN TRANSACTION')
+        
+        # Clear existing leaderboard
+        cursor.execute('DELETE FROM leaderboard')
+        
+        # Recalculate match prediction points
+        cursor.execute('''
+        INSERT INTO leaderboard (user_id, match_week, weekly_points)
+        SELECT user_id, match_week, SUM(points) as total_points
+        FROM predictions
+        WHERE points > 0
+        GROUP BY user_id, match_week
+        ''')
+        
+        # Add bonus question points
+        cursor.execute('''
+        INSERT INTO leaderboard (user_id, match_week, weekly_points)
+        SELECT user_id, match_week, SUM(points) as total_points
+        FROM bonus_answers
+        WHERE points > 0
+        GROUP BY user_id, match_week
+        ON CONFLICT(user_id, match_week) 
+        DO UPDATE SET weekly_points = leaderboard.weekly_points + excluded.weekly_points
+        ''')
+        
+        cursor.execute('COMMIT')
+        await ctx.send("✅ Weekly points recalculated successfully!")
+        await update_leaderboard()
+        
+    except Exception as e:
+        cursor.execute('ROLLBACK')
+        await ctx.send(f"❌ Error recalculating points: {e}")
+
 
 # Run bot
 bot.run(TOKEN)
