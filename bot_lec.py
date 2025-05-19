@@ -352,7 +352,7 @@ async def schedule(ctx, match_date: str, match_type: str, team1: str, team2: str
 
 @bot.command()
 @commands.check(is_mod_channel)
-async def add_bonus_question(ctx, date: str, question: str, description: str, options: str, reaction_type: str = "numbered", required_answers: int = 1, points: int = 1):
+async def add_bonus_question(ctx, date: str, question: str, description: str, options: str, reaction_type: str = "numbers", required_answers: int = 1, points: int = 1):
     """
     Adds a bonus question to the database.
     Requires:
@@ -363,8 +363,8 @@ async def add_bonus_question(ctx, date: str, question: str, description: str, op
         current_year = datetime.now().year
         match_date_with_year = parsed_date.replace(year=current_year)
 
-        if reaction_type.lower() not in ["numbered", "teams"]:
-            await ctx.send("Invalid reaction type. Use 'numbered' or 'teams'")
+        if reaction_type.lower() not in ["numbers", "teams"]:
+            await ctx.send("Invalid reaction type. Use 'numbers' or 'teams'")
             return
 
         cursor.execute("SELECT match_date, match_week FROM matches ORDER BY match_week DESC LIMIT 1")
@@ -908,7 +908,7 @@ async def on_raw_reaction_add(payload):
             # Locate the question in the database
             question_text = title.split(":")[1].strip()  # Extract question text
             cursor.execute('''
-            SELECT id, match_week, options, required_answers, points FROM bonus_questions
+            SELECT id, match_week, options, reaction_type, required_answers, points FROM bonus_questions
             WHERE question = ?
             ORDER BY id DESC LIMIT 1
             ''', (question_text,))
@@ -918,10 +918,18 @@ async def on_raw_reaction_add(payload):
                 await message.channel.send(f"Error: No bonus question found for '{question_text}'.")
                 return
 
-            question_id, week, options, required_answers, points_value = question_row
+            question_id, week, options, reaction_type, required_answers, points_value = question_row
             option_split = [option.strip() for option in options.split(",")]
-            NUMBER_EMOJIS = ["1️⃣", "2️⃣", "3️⃣", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
-            reactions = NUMBER_EMOJIS[:len(option_split)]
+            reactions = []
+            if reaction_type == "numbers":
+                reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
+            elif reaction_type == "teams":
+                    option_teams = [team.strip() for team in options.split(",")]
+                    # Try to get emotes for each team
+                    reactions = []
+                    for team in option_teams:
+                        if team in TEAM_EMOTES:
+                            reactions.append(TEAM_EMOTES[team])
 
             if str(payload.emoji.name) not in reactions and str(payload.emoji.name) != "✅":
                 await message.channel.send("Invalid reaction. Please select a valid option.")
@@ -1178,7 +1186,8 @@ async def on_raw_reaction_remove(payload):
                 return
 
             option_split = [option.strip() for option in options.split(",")]
-            if reaction_type == "numbered":
+            reactions = []
+            if reaction_type == "numbers":
                 reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
             elif reaction_type == "teams":
                     option_teams = [team.strip() for team in options.split(",")]
@@ -1236,7 +1245,7 @@ async def on_raw_reaction_remove(payload):
             question_id, options, reaction_type, answer_data, match_week = question_row
 
             option_split = [option.strip() for option in options.split(",")]
-            if reaction_type == "numbered":
+            if reaction_type == "numbers":
                 reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
             elif reaction_type == "teams":
                     # Try to get emotes for each team
