@@ -159,6 +159,19 @@ TEAM_EMOTES = {
     "BDS": "<:BDS:1330750484251938818>"
 }
 
+team_emote_ids = {
+    "KOI": "1330749930167603311",
+    "SK": "1330750495169445928",
+    "FNC": "1330750485568946317",
+    "G2": "1330750487762440222",
+    "TH": "1330750491046445106",
+    "RGE": "1330750493839855686",
+    "VIT": "1330750496557760624",
+    "GX": "1330750489285103616",
+    "KC": "1330750492552466463",
+    "BDS": "1330750484251938818"
+}
+
 def is_mod_channel(ctx):
     admin_channel_id = 1346615169433997322
     return ctx.channel.id == admin_channel_id
@@ -930,8 +943,12 @@ async def on_raw_reaction_add(payload):
                     for team in option_teams:
                         if team in TEAM_EMOTES:
                             reactions.append(TEAM_EMOTES[team])
+                            reaction_ids = [TEAM_EMOTES[team].id for team in option_teams]
+            
+            print(f"Reactions: {reactions}")
+            print(f"reaction_ids: {reaction_ids}")
 
-            if str(payload.emoji.name) not in reactions and str(payload.emoji.name) != "✅":
+            if str(payload.emoji.name) not in reactions and str(payload.emoji.id) not in team_emote_ids and str(payload.emoji.name) != "✅":
                 await message.channel.send("Invalid reaction. Please select a valid option.")
                 return
 
@@ -983,10 +1000,16 @@ async def on_raw_reaction_add(payload):
                 try:
                     # Ensure reactions are aligned with options
                     try:
-                        selected_index = reactions.index(str(payload.emoji.name))
+                        if isinstance(payload.emoji, discord.PartialEmoji):
+                            # Handle custom emojis
+                            selected_index = reaction_ids.index(str(payload.emoji.id))
+                        elif isinstance(payload.emoji, discord.Emoji):
+                            # Handle standard emojis
+                            selected_index = reactions.index(str(payload.emoji.name))
                     except ValueError:
                         await bot_channel.send(f"{user.mention} Invalid reaction. Please select a valid option.")
                         return
+                    print(selected_index)
 
                     # Fetch existing answers
                     cursor.execute('''
@@ -1009,7 +1032,6 @@ async def on_raw_reaction_add(payload):
 
                     if len(existing_answers) < required_answers:
                         # Map emoji to actual option
-                        selected_index = reactions.index(str(payload.emoji.name))
                         selected_option = option_split[selected_index]
 
                         if selected_option not in existing_answers:
@@ -1068,7 +1090,13 @@ async def on_raw_reaction_add(payload):
                 else:
                     correct_answers = set()  # Initialize as empty if no value is stored
 
-                user_input = dict(zip(reactions, option_split)).get(str(payload.emoji.name), None)
+                if isinstance(payload.emoji, discord.PartialEmoji):
+                    # Handle custom emojis
+                    user_input = dict(zip(reaction_ids, option_split)).get(str(payload.emoji.id), None)
+                elif isinstance(payload.emoji, discord.Emoji):
+                    user_input = dict(zip(reactions, option_split)).get(str(payload.emoji.name), None)
+                
+                print(user_input)
 
                 if user_input:
                     correct_answers.add(user_input)  # Add selection
