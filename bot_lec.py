@@ -947,6 +947,8 @@ async def on_raw_reaction_add(payload):
             
             print(f"Reactions: {reactions}")
             print(f"reaction_ids: {reaction_ids}")
+            print(f"payload emoji id: {payload.emoji.id}")
+            print(f"payload emoji name: {payload.emoji.name}")
 
             if str(payload.emoji.name) not in reactions and str(payload.emoji.id) not in team_emote_ids and str(payload.emoji.name) != "✅":
                 await message.channel.send("Invalid reaction. Please select a valid option.")
