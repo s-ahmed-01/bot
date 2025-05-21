@@ -1226,8 +1226,9 @@ async def on_raw_reaction_remove(payload):
                     for team in option_teams:
                         if team in TEAM_EMOTES:
                             reactions.append(TEAM_EMOTES[team])
+                            reaction_ids = [TEAM_EMOTES[team].split(':')[2].rstrip('>') for team in option_teams]
 
-            if str(payload.emoji.name) not in reactions:
+            if str(payload.emoji.name) not in reactions and str(payload.emoji.id) not in reaction_ids:
                 return
 
             # Fetch existing answers
@@ -1243,7 +1244,12 @@ async def on_raw_reaction_remove(payload):
                 return  # Nothing to remove
 
             # Map emoji to actual option
-            selected_index = reactions.index(str(payload.emoji.name))
+            if isinstance(payload.emoji, discord.PartialEmoji):
+                            # Handle custom emojis
+                selected_index = reaction_ids.index(str(payload.emoji.id))
+            elif isinstance(payload.emoji, discord.Emoji):
+                            # Handle standard emojis
+                selected_index = reactions.index(str(payload.emoji.name))
             selected_option = option_split[selected_index]
 
             if selected_option in existing_answers:
