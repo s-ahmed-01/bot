@@ -160,16 +160,16 @@ TEAM_EMOTES = {
 }
 
 team_emote_ids = {
-    "KOI": "1330749930167603311",
-    "SK": "1330750495169445928",
-    "FNC": "1330750485568946317",
-    "G2": "1330750487762440222",
-    "TH": "1330750491046445106",
-    "RGE": "1330750493839855686",
-    "VIT": "1330750496557760624",
-    "GX": "1330750489285103616",
-    "KC": "1330750492552466463",
-    "BDS": "1330750484251938818"
+    "KOI": 1330749930167603311,
+    "SK": 1330750495169445928,
+    "FNC": 1330750485568946317,
+    "G2": 1330750487762440222,
+    "TH": 1330750491046445106,
+    "RGE": 1330750493839855686,
+    "VIT": 1330750496557760624,
+    "GX": 1330750489285103616,
+    "KC": 1330750492552466463,
+    "BDS": 1330750484251938818
 }
 
 def is_mod_channel(ctx):
@@ -950,7 +950,7 @@ async def on_raw_reaction_add(payload):
             print(f"payload emoji id: {payload.emoji.id}")
             print(f"payload emoji name: {payload.emoji.name}")
 
-            if str(payload.emoji.name) not in reactions and str(payload.emoji.id) not in team_emote_ids and str(payload.emoji.name) != "✅":
+            if (str(payload.emoji.name) not in reactions) and (str(payload.emoji.id) not in reaction_ids) and (str(payload.emoji.name) != "✅"):
                 await message.channel.send("Invalid reaction. Please select a valid option.")
                 return
 
