@@ -943,7 +943,7 @@ async def on_raw_reaction_add(payload):
                     for team in option_teams:
                         if team in TEAM_EMOTES:
                             reactions.append(TEAM_EMOTES[team])
-                            reaction_ids = [TEAM_EMOTES[team].id for team in option_teams]
+                            reaction_ids = [TEAM_EMOTES[team].split(':')[1].rstrip('>') for team in option_teams]
             
             print(f"Reactions: {reactions}")
             print(f"reaction_ids: {reaction_ids}")
