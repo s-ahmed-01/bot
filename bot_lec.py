@@ -581,7 +581,7 @@ async def create_bonus_poll(prediction_channel, result_channel, question_id, que
     # Create result poll
     result_embed = discord.Embed(
         title=f"Bonus Question Result: {question_text}",
-        description=description + (f"Points: {points}"),
+        description=description + (f" Points: {points}"),
         color=discord.Color.orange()
     )
     for i, option in enumerate(options, start=1):
