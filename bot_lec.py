@@ -1008,7 +1008,7 @@ async def on_raw_reaction_add(payload):
                             selected_index = reaction_ids.index(str(payload.emoji.id))
                         elif isinstance(payload.emoji, discord.Emoji):
                             # Handle standard emojis
-                            selected_index = reactions.index(str(payload.emoji.name))
+                            selected_index = reaction_ids.index(str(payload.emoji.name))
                     except ValueError:
                         await bot_channel.send(f"{user.mention} Invalid reaction. Please select a valid option.")
                         return
