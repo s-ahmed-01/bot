@@ -1018,7 +1018,7 @@ async def on_raw_reaction_add(payload):
 
                             selected_index = reactions.index(str(payload.emoji))
                     except ValueError:
-                        # await bot_channel.send(f"{user.mention} Invalid reaction. Please select a valid option.")
+                        await bot_channel.send(f"{user.mention} Invalid reaction. Please select a valid option.")
                         return
                     print(selected_index)
 
