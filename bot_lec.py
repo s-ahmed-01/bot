@@ -936,6 +936,7 @@ async def on_raw_reaction_add(payload):
             reactions = []
             if reaction_type == "numbers":
                 reactions = [f"{i + 1}️⃣" for i in range(len(option_split))]
+                reaction_ids = [str(i + 1) for i in range(len(option_split))]
             elif reaction_type == "teams":
                     option_teams = [team.strip() for team in options.split(",")]
                     # Try to get emotes for each team
