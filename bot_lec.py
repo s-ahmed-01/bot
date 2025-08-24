@@ -1194,6 +1194,8 @@ async def on_raw_reaction_remove(payload):
         return  # Ignore bot reactions
     if payload.channel_id not in [POLL_CHANNEL_ID, ADMIN_CHANNEL_ID]:
         return
+    bot_channel_id = 1346615855408091180  # Replace with your bot channel ID
+    bot_channel = bot.get_channel(bot_channel_id)
 
     # Fetch the full message if not already cached
     try:
@@ -1253,13 +1255,25 @@ async def on_raw_reaction_remove(payload):
                 return  # Nothing to remove
 
             # Map emoji to actual option
-            if isinstance(payload.emoji, discord.PartialEmoji):
-                            # Handle custom emojis
-                selected_index = reaction_ids.index(str(payload.emoji.id))
-            elif isinstance(payload.emoji, discord.Emoji):
-                            # Handle standard emojis
-                selected_index = reactions.index(str(payload.emoji.name))
-            selected_option = option_split[selected_index]
+            try:
+                if isinstance(payload.emoji, discord.PartialEmoji):
+                    # Handle custom emojis
+                    print("hi")
+                    if payload.emoji.id:  # Custom emoji (team emotes)
+                        print("Custom emoji detected")
+                        selected_index = reaction_ids.index(str(payload.emoji.id))
+                    else:  # Unicode emoji (number emotes)
+                        print("Unicode emoji detected")
+                        selected_index = reactions.index(str(payload.emoji))
+                elif isinstance(payload.emoji, discord.Emoji):
+                    # Handle standard emojis
+                    print("hi2")
+                    selected_index = reactions.index(str(payload.emoji))
+                    
+            except ValueError:
+                await bot_channel.send(f"{user.mention} Invalid reaction. Please select a valid option.")
+                return
+            print(selected_index)
 
             if selected_option in existing_answers:
                 print("i got here :/)")
