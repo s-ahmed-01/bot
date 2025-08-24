@@ -1269,12 +1269,14 @@ async def on_raw_reaction_remove(payload):
                     # Handle standard emojis
                     print("hi2")
                     selected_index = reactions.index(str(payload.emoji))
-                    
+
             except ValueError:
                 await bot_channel.send(f"{user.mention} Invalid reaction. Please select a valid option.")
                 return
             print(selected_index)
 
+            selected_option = option_split[selected_index]
+            
             if selected_option in existing_answers:
                 print("i got here :/)")
                 existing_answers.remove(selected_option)
