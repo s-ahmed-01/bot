@@ -2266,6 +2266,88 @@ async def recalculate_weeks(ctx):
         cursor.execute('ROLLBACK')
         await ctx.send(f"❌ Error recalculating points: {e}")
 
+@bot.command()
+@commands.check(is_mod_channel)
+async def sync_poll_reactions(ctx):
+    """Syncs database answers with current poll reactions for all bonus questions in channel."""
+    try:
+        poll_channel = bot.get_channel(1346615134885253181)
+        updated_count = 0
 
+        async for message in poll_channel.history(limit=200):
+            if not (message.embeds and "Bonus Question:" in message.embeds[0].title):
+                continue
+                
+            question_text = message.embeds[0].title.split(":")[1].strip()
+            
+            # Get question details from database
+            cursor.execute('''
+            SELECT id, options, reaction_type, match_week 
+            FROM bonus_questions 
+            WHERE question = ?
+            ''', (question_text,))
+            question_row = cursor.fetchone()
+
+            if not question_row:
+                continue
+
+            question_id, options, reaction_type, match_week = question_row
+            option_split = [opt.strip() for opt in options.split(",")]
+
+            # Start transaction for each question
+            cursor.execute('BEGIN TRANSACTION')
+            try:
+                # Clear existing answers for this question
+                cursor.execute('DELETE FROM bonus_answers WHERE question_id = ?', (question_id,))
+
+                # Process each reaction on the message
+                for reaction in message.reactions:
+                    async for user in reaction.users():
+                        if user == bot.user:  # Skip bot's reactions
+                            continue
+                            
+                        # Map reaction to option based on reaction type
+                        selected_option = None
+                        if reaction_type == "numbers":
+                            if str(reaction.emoji) in [f"{i+1}️⃣" for i in range(len(option_split))]:
+                                selected_index = [f"{i+1}️⃣" for i in range(len(option_split))].index(str(reaction.emoji))
+                                selected_option = option_split[selected_index]
+                        elif reaction_type == "teams":
+                            if isinstance(reaction.emoji, discord.PartialEmoji):
+                                emoji_id = str(reaction.emoji.id)
+                                for i, team in enumerate(option_split):
+                                    if team in TEAM_EMOTES and TEAM_EMOTES[team].split(':')[2].rstrip('>') == emoji_id:
+                                        selected_option = team
+                                        break
+
+                        if selected_option:
+                            # Update database with reaction
+                            cursor.execute('''
+                            SELECT answer FROM bonus_answers WHERE user_id = ? AND question_id = ?
+                            ''', (user.id, question_id))
+                            row = cursor.fetchone()
+                            
+                            existing_answers = json.loads(row[0]) if row and row[0] else []
+                            if selected_option not in existing_answers:
+                                existing_answers.append(selected_option)
+
+                            cursor.execute('''
+                            INSERT INTO bonus_answers (user_id, question_id, answer, match_week)
+                            VALUES (?, ?, ?, ?)
+                            ON CONFLICT(user_id, question_id) DO UPDATE SET answer = excluded.answer
+                            ''', (user.id, question_id, json.dumps(existing_answers), match_week))
+
+                cursor.execute('COMMIT')
+                updated_count += 1
+
+            except Exception as e:
+                cursor.execute('ROLLBACK')
+                await ctx.send(f"Error processing question '{question_text}': {e}")
+
+        await ctx.send(f"✅ Successfully synced reactions for {updated_count} bonus questions!")
+
+    except Exception as e:
+        await ctx.send(f"❌ Error syncing reactions: {e}")
+        
 # Run bot
 bot.run(TOKEN)
