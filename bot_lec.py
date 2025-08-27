@@ -1102,8 +1102,10 @@ async def on_raw_reaction_add(payload):
                     correct_answers = set()  # Initialize as empty if no value is stored
 
                 if isinstance(payload.emoji, discord.PartialEmoji):
-                    # Handle custom emojis
-                    user_input = dict(zip(reaction_ids, option_split)).get(str(payload.emoji.id), None)
+                    if payload.emoji.id:  # Custom team emotes
+                        user_input = dict(zip(reaction_ids, option_split)).get(str(payload.emoji.id), None)
+                    else:  # Unicode number emotes
+                        user_input = dict(zip(reactions, option_split)).get(str(payload.emoji.name), None)
                 elif isinstance(payload.emoji, discord.Emoji):
                     user_input = dict(zip(reactions, option_split)).get(str(payload.emoji.name), None)
                 
