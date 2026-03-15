@@ -715,7 +715,7 @@ async def on_raw_reaction_add(payload):
                 ''', (user.id, str(user.name)))  # Stores the current username
                 conn.commit()
 
-                await print(f"{user.name} your prediction has been logged: {pred_winner} with score {pred_score}.")
+                print(f"{user.name} your prediction has been logged: {pred_winner} with score {pred_score}.")
 
             elif poll_type == "result_poll":
                 # Check if result already exists
@@ -1149,7 +1149,7 @@ async def on_raw_reaction_remove(payload):
                         WHERE id = ?
                         ''', (correct_answers_json, question_id))
                         conn.commit()
-                        await print(f"✅ Removed {selected_option} from correct answers.")
+                        print(f"✅ Removed {selected_option} from correct answers.")
         
         elif "Match Poll" in title:
             try:
